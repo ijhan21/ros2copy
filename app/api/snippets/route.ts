@@ -3,12 +3,18 @@ import { getSnippets, createSnippet } from "@/lib/db";
 import { verifyAdminPassword } from "@/lib/auth";
 import { SnippetKind } from "@/lib/types";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(request: NextRequest) {
   try {
     const tabIdParam = request.nextUrl.searchParams.get("tab_id");
     const tabId = tabIdParam ? parseInt(tabIdParam, 10) : undefined;
     const snippets = await getSnippets(isNaN(tabId as number) ? undefined : tabId);
-    return NextResponse.json(snippets);
+    return NextResponse.json(snippets, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate",
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to fetch snippets" }, { status: 500 });
   }

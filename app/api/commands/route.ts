@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCommands, createCommand } from "@/lib/db";
 import { verifyAdminPassword } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const commands = await getCommands();
-    return NextResponse.json(commands);
+    return NextResponse.json(commands, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate",
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to fetch commands" }, { status: 500 });
   }

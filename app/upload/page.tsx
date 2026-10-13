@@ -29,9 +29,10 @@ export default function TeacherPage() {
   const [detectedKind, setDetectedKind] = useState<SnippetKind>("text");
   const [userOverriddenKind, setUserOverriddenKind] = useState<SnippetKind | null>(null);
   const [notification, setNotification] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [isSubmittingSnippet, setIsSubmittingSnippet] = useState(false);
 
-  // 최근 스니펫 목록 (탭에 등록된 개수 세기 및 자동 제목용)
+  // 최근 스니펫 목록
   const [allSnippets, setAllSnippets] = useState<Snippet[]>([]);
 
   // 명령 한 줄 보내기 상태
@@ -44,7 +45,7 @@ export default function TeacherPage() {
 
   // 1. 암호 로드
   useEffect(() => {
-    const saved = localStorage.getItem("BOARD_PASSWORD");
+    const saved = localStorage.getItem("BOARD_PASSWORD")?.trim();
     if (saved) {
       setPassword(saved);
     } else {
@@ -52,13 +53,14 @@ export default function TeacherPage() {
     }
   }, []);
 
-  // 2. 데이터 가져오기
+  // 2. 전체 데이터 실시간 가져오기 (캐시 방지 타임스탬프)
   const refreshAllData = useCallback(async () => {
     try {
+      const now = Date.now();
       const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
-        fetch("/api/tabs", { cache: "no-store" }),
-        fetch("/api/snippets", { cache: "no-store" }),
-        fetch("/api/commands", { cache: "no-store" }),
+        fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
+        fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
+        fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
       ]);
 
       if (tabsRes.ok) {
@@ -97,24 +99,42 @@ export default function TeacherPage() {
     refreshAllData();
   }, [refreshAllData]);
 
+  // 알림 및 에러 배너 헬퍼
+  const showNotice = (msg: string) => {
+    setNotification(msg);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const showError = (msg: string) => {
+    setErrorMessage(msg);
+    setTimeout(() => setErrorMessage(null), 5000);
+  };
+
   // 암호 검증 및 저장
   const handleVerifyPassword = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setAuthError("");
+    const inputPwd = tempPassword.trim();
+    if (!inputPwd) {
+      setAuthError("암호를 입력하십시오.");
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/verify", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-board-password": tempPassword,
+          "x-board-password": inputPwd,
         },
       });
 
       if (res.ok) {
-        setPassword(tempPassword);
-        localStorage.setItem("BOARD_PASSWORD", tempPassword);
+        setPassword(inputPwd);
+        localStorage.setItem("BOARD_PASSWORD", inputPwd);
         setIsAuthModalOpen(false);
         setTempPassword("");
+        showNotice("암호가 인증되었습니다.");
         refreshAllData();
       } else {
         const data = await res.json();
@@ -125,6 +145,16 @@ export default function TeacherPage() {
     }
   };
 
+  // 암호 입력 확인 가드
+  const requirePassword = (): boolean => {
+    if (!password) {
+      setIsAuthModalOpen(true);
+      showError("먼저 강사 암호를 입력하십시오.");
+      return false;
+    }
+    return true;
+  };
+
   // 탭 선택 핸들러
   const handleSelectTab = (tabId: number) => {
     setSelectedTabId(tabId);
@@ -133,7 +163,10 @@ export default function TeacherPage() {
 
   // 새 탭 생성
   const handleCreateTab = async () => {
-    if (!newTabName.trim()) return;
+    if (!requirePassword()) return;
+    const name = newTabName.trim();
+    if (!name) return;
+
     try {
       const res = await fetch("/api/tabs", {
         method: "POST",
@@ -141,7 +174,7 @@ export default function TeacherPage() {
           "Content-Type": "application/json",
           "x-board-password": password,
         },
-        body: JSON.stringify({ name: newTabName.trim() }),
+        body: JSON.stringify({ name }),
       });
 
       if (res.ok) {
@@ -150,18 +183,25 @@ export default function TeacherPage() {
         handleSelectTab(createdTab.id);
         setNewTabName("");
         setIsCreatingTab(false);
+        showNotice(`'${createdTab.name}' 탭을 만들었습니다.`);
+        refreshAllData();
       } else {
         const err = await res.json();
-        alert(err.error || "탭 생성 실패");
+        if (res.status === 401) {
+          setIsAuthModalOpen(true);
+        }
+        showError(err.error || "탭 생성 실패");
       }
     } catch (err) {
       console.error(err);
-      alert("탭 생성 중 통신 오류가 발생했습니다.");
+      showError("탭 생성 중 통신 오류가 발생했습니다.");
     }
   };
 
   // 탭 삭제
   const handleDeleteTab = async (tab: Tab) => {
+    if (!requirePassword()) return;
+
     const snippetCount = allSnippets.filter((s) => s.tab_id === tab.id).length;
     if (snippetCount > 0) {
       const confirmed = window.confirm(
@@ -189,12 +229,18 @@ export default function TeacherPage() {
           setSelectedTabId(nextId);
           if (nextId) localStorage.setItem("selectedTeacherTabId", nextId.toString());
         }
+        showNotice(`'${tab.name}' 탭을 삭제했습니다.`);
+        refreshAllData();
       } else {
-        alert("탭 삭제 실패");
+        const err = await res.json();
+        if (res.status === 401) {
+          setIsAuthModalOpen(true);
+        }
+        showError(err.error || "탭 삭제 실패");
       }
     } catch (err) {
       console.error(err);
-      alert("탭 삭제 중 오류 발생");
+      showError("탭 삭제 중 오류 발생");
     }
   };
 
@@ -219,6 +265,7 @@ export default function TeacherPage() {
 
   // 코드 올리기 실행
   const handleSubmitSnippet = async () => {
+    if (!requirePassword()) return;
     if (!codeBody.trim() || isSubmittingSnippet) return;
 
     // 제목이 비어있으면 자동 생성: "{선택된탭이름} · {순번}번째"
@@ -258,19 +305,19 @@ export default function TeacherPage() {
         setUserOverriddenKind(null);
         setDetectedKind("text");
 
-        // 알림 띠 표시
-        setNotification("올렸습니다");
-        setTimeout(() => setNotification(null), 2500);
-
-        // 다시 textarea에 포커스
+        showNotice("코드를 올렸습니다.");
+        refreshAllData();
         textareaRef.current?.focus();
       } else {
         const err = await res.json();
-        alert(err.error || "코드 올리기 실패");
+        if (res.status === 401) {
+          setIsAuthModalOpen(true);
+        }
+        showError(err.error || "코드 올리기 실패");
       }
     } catch (err) {
       console.error(err);
-      alert("코드 올리기 중 네트워크 오류");
+      showError("코드 올리기 중 네트워크 오류");
     } finally {
       setIsSubmittingSnippet(false);
     }
@@ -287,6 +334,7 @@ export default function TeacherPage() {
   // 명령 한 줄 보내기 실행 (Enter 시 바로 전송)
   const handleSubmitCommand = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (!requirePassword()) return;
     if (!cmdBody.trim() || isSubmittingCommand) return;
 
     setIsSubmittingCommand(true);
@@ -308,13 +356,18 @@ export default function TeacherPage() {
         setCommands((prev) => [...prev, created]);
         setCmdBody("");
         setCmdMemo("");
+        showNotice("명령어를 보냈습니다.");
+        refreshAllData();
       } else {
         const err = await res.json();
-        alert(err.error || "명령 보내기 실패");
+        if (res.status === 401) {
+          setIsAuthModalOpen(true);
+        }
+        showError(err.error || "명령 보내기 실패");
       }
     } catch (err) {
       console.error(err);
-      alert("명령 전송 중 네트워크 오류");
+      showError("명령 전송 중 네트워크 오류");
     } finally {
       setIsSubmittingCommand(false);
     }
@@ -322,6 +375,7 @@ export default function TeacherPage() {
 
   // 명령 핀 토글
   const handleTogglePin = async (cmd: Command) => {
+    if (!requirePassword()) return;
     try {
       const res = await fetch(`/api/commands/${cmd.id}`, {
         method: "PATCH",
@@ -337,14 +391,21 @@ export default function TeacherPage() {
         setCommands((prev) =>
           prev.map((c) => (c.id === updated.id ? updated : c))
         );
+        refreshAllData();
+      } else {
+        const err = await res.json();
+        if (res.status === 401) setIsAuthModalOpen(true);
+        showError(err.error || "핀 설정 실패");
       }
     } catch (err) {
       console.error("핀 토글 오류:", err);
+      showError("핀 설정 오류");
     }
   };
 
   // 명령 삭제
   const handleDeleteCommand = async (id: number) => {
+    if (!requirePassword()) return;
     try {
       const res = await fetch(`/api/commands/${id}`, {
         method: "DELETE",
@@ -355,9 +416,15 @@ export default function TeacherPage() {
 
       if (res.ok) {
         setCommands((prev) => prev.filter((c) => c.id !== id));
+        refreshAllData();
+      } else {
+        const err = await res.json();
+        if (res.status === 401) setIsAuthModalOpen(true);
+        showError(err.error || "명령 삭제 실패");
       }
     } catch (err) {
       console.error("명령 삭제 오류:", err);
+      showError("명령 삭제 오류");
     }
   };
 
@@ -368,19 +435,55 @@ export default function TeacherPage() {
     <div className="min-h-screen flex flex-col bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5] pb-48">
       <Header isTeacher />
 
-      {/* 알림 띠 (올렸습니다) */}
+      {/* 상단 알림 띠 (성공) */}
       {notification && (
-        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-[8px] bg-[#0F766E] text-white text-sm font-semibold shadow-lg transition-all animate-fade-in">
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-[8px] bg-[#0F766E] text-white text-sm font-semibold shadow-lg transition-all">
           {notification}
         </div>
       )}
 
+      {/* 상단 에러 배너 (실패 피드백) */}
+      {errorMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-[8px] bg-red-600 text-white text-sm font-semibold shadow-lg transition-all">
+          {errorMessage}
+        </div>
+      )}
+
       {/* 메인 작업 영역 */}
-      <main className="max-w-4xl mx-auto w-full p-4 sm:p-6 flex-1 flex flex-col gap-6">
+      <main className="max-w-4xl mx-auto w-full p-4 sm:p-6 flex-1 flex flex-col gap-5">
+        {/* 암호 상태 바 */}
+        <div className="flex items-center justify-between p-3 rounded-[8px] border text-xs bg-[#FFFFFF] dark:bg-[#1A1A1E] border-[#E4E4E7] dark:border-[#2E2E36]">
+          <div className="flex items-center gap-2">
+            <span
+              className={`w-2 h-2 rounded-full ${
+                password ? "bg-[#0F766E]" : "bg-red-500 animate-pulse"
+              }`}
+            />
+            <span className="font-medium text-[#52525B] dark:text-[#A1A1AA]">
+              {password
+                ? "강사 암호가 등록되어 있습니다."
+                : "강사 암호가 입력되지 않았습니다. 암호가 없으면 작업이 거부됩니다."}
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              setTempPassword(password);
+              setAuthError("");
+              setIsAuthModalOpen(true);
+            }}
+            className="min-h-[30px] px-2.5 font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[6px] hover:bg-[#F7F7F8] dark:hover:bg-[#26262E]"
+          >
+            {password ? "암호 변경" : "암호 입력"}
+          </button>
+        </div>
+
         {/* 1. 탭 관리 줄 (맨 위) */}
         <section className="bg-[#FFFFFF] dark:bg-[#1A1A1E] p-4 rounded-[13px] border border-[#E4E4E7] dark:border-[#2E2E36]">
-          <div className="text-xs font-semibold text-[#71717A] mb-2.5">
-            탭 관리 — 코드를 올릴 탭을 선택하십시오
+          <div className="text-xs font-semibold text-[#71717A] mb-2.5 flex items-center justify-between">
+            <span>탭 관리 — 코드를 올릴 탭을 선택하십시오</span>
+            <span className="text-[11px] text-[#A1A1AA]">
+              선택된 탭: {tabs.find((t) => t.id === selectedTabId)?.name || "없음"}
+            </span>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
@@ -517,7 +620,7 @@ export default function TeacherPage() {
             />
           </div>
 
-          {/* 올리기 단추 (중요한 단추 min-h-[44px]) */}
+          {/* 올리기 단추 */}
           <div className="flex items-center justify-end gap-3">
             <span className="text-xs text-[#71717A]">
               Ctrl + Enter 로도 등록됩니다
@@ -536,10 +639,10 @@ export default function TeacherPage() {
       {/* 3. 명령 한 줄 보내기 (화면 맨 아래 붙박이, 어두운 띠) */}
       <footer className="fixed bottom-0 left-0 right-0 z-40 bg-[#1C1C22] border-t border-[#2E2E36] text-[#D4D7DD] shadow-2xl">
         <div className="max-w-4xl mx-auto w-full p-3 sm:p-4">
-          {/* 방금 보낸 줄 몇 개 (핀 / 지우기) */}
+          {/* 방금 보낸 줄 몇 개 */}
           {recentCommands.length > 0 && (
             <div className="mb-3 max-h-32 overflow-y-auto space-y-1.5 custom-scroll pr-1">
-              <div className="text-[11px] text-[#71717A] mb-1">방금 보낸 명령</div>
+              <div className="text-[11px] text-[#71717A] mb-1">방금 보낸 명령 ({commands.length}개)</div>
               {recentCommands.map((cmd) => (
                 <div
                   key={cmd.id}
@@ -624,7 +727,7 @@ export default function TeacherPage() {
               강사 암호 입력
             </h3>
             <p className="text-xs text-[#71717A] mb-4">
-              코드를 올리고 관리하려면 설정된 강사 암호를 입력하십시오.
+              코드를 올리고 관리하려면 Vercel 환경변수(BOARD_PASSWORD)에 설정된 암호를 입력하십시오. (기본값: ros2)
             </p>
 
             <form onSubmit={handleVerifyPassword} className="space-y-4">
@@ -643,12 +746,21 @@ export default function TeacherPage() {
                 </div>
               )}
 
-              <button
-                type="submit"
-                className="w-full min-h-[44px] font-semibold text-sm rounded-[8px] bg-[#0F766E] text-white hover:bg-[#115E59] transition-colors"
-              >
-                확인
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="submit"
+                  className="flex-1 min-h-[44px] font-semibold text-sm rounded-[8px] bg-[#0F766E] text-white hover:bg-[#115E59] transition-colors"
+                >
+                  확인
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAuthModalOpen(false)}
+                  className="px-4 min-h-[44px] text-xs text-[#71717A] border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] hover:bg-[#F7F7F8] dark:hover:bg-[#26262E]"
+                >
+                  닫기
+                </button>
+              </div>
             </form>
           </div>
         </div>

@@ -3,21 +3,29 @@ import { Tab, Snippet, Command, SnippetKind } from "./types";
 import fs from "fs";
 import path from "path";
 
-// Supabase 환경변수 확인
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+// Supabase 싱글톤 클라이언트
+let cachedSupabase: SupabaseClient | null = null;
 
-let supabase: SupabaseClient | null = null;
-if (supabaseUrl && supabaseServiceKey) {
-  supabase = createClient(supabaseUrl, supabaseServiceKey, {
-    auth: {
-      persistSession: false,
-      autoRefreshToken: false,
-    },
-  });
+function getSupabase(): SupabaseClient | null {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    return null;
+  }
+
+  if (!cachedSupabase) {
+    cachedSupabase = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+      },
+    });
+  }
+  return cachedSupabase;
 }
 
-// 로컬 Fallback 스토리지 (Supabase 미설정 시 로컬 테스트용)
+// 로컬/인메모리 Fallback 스토리지 (Supabase 미설정 시 안전 모드)
 interface LocalData {
   tabs: Tab[];
   snippets: Snippet[];
@@ -27,60 +35,74 @@ interface LocalData {
   nextCommandId: number;
 }
 
-const LOCAL_DB_PATH = path.join(process.cwd(), ".local_db.json");
+const LOCAL_DB_PATH = path.join("/tmp", ".ros2copy_local_db.json");
+
+// globalThis에 메모리 캐시 유지 (서버리스 인스턴스 생명주기 동안 보존)
+declare global {
+  // eslint-disable-next-line no-var
+  var __ROS2_MEMORY_DB__: LocalData | undefined;
+}
 
 function getLocalData(): LocalData {
-  if (!fs.existsSync(LOCAL_DB_PATH)) {
-    const initial: LocalData = {
-      tabs: [
-        { id: 1, name: "실습 1차시", sort: 1, created_at: new Date(Date.now() - 3600000).toISOString() },
-        { id: 2, name: "실습 2차시", sort: 2, created_at: new Date(Date.now() - 1800000).toISOString() },
-      ],
-      snippets: [],
-      commands: [],
-      nextTabId: 3,
-      nextSnippetId: 1,
-      nextCommandId: 1,
-    };
+  if (globalThis.__ROS2_MEMORY_DB__) {
+    return globalThis.__ROS2_MEMORY_DB__;
+  }
+
+  if (fs.existsSync(LOCAL_DB_PATH)) {
     try {
-      fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(initial, null, 2), "utf-8");
+      const content = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
+      const parsed = JSON.parse(content);
+      globalThis.__ROS2_MEMORY_DB__ = parsed;
+      return parsed;
     } catch {
-      // 읽기 전용 환경 등 예외 처리
+      // 파싱 실패 시 새로 생성
     }
-    return initial;
   }
+
+  const initial: LocalData = {
+    tabs: [
+      { id: 1, name: "실습 1차시", sort: 1, created_at: new Date(Date.now() - 3600000).toISOString() },
+      { id: 2, name: "실습 2차시", sort: 2, created_at: new Date(Date.now() - 1800000).toISOString() },
+    ],
+    snippets: [],
+    commands: [],
+    nextTabId: 3,
+    nextSnippetId: 1,
+    nextCommandId: 1,
+  };
+
   try {
-    const content = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
-    return JSON.parse(content);
-  } catch {
-    return {
-      tabs: [],
-      snippets: [],
-      commands: [],
-      nextTabId: 1,
-      nextSnippetId: 1,
-      nextCommandId: 1,
-    };
+    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(initial, null, 2), "utf-8");
+  } catch (err) {
+    console.warn("로컬 DB 파일 쓰기 건너뜀 (메모리만 사용):", err);
   }
+
+  globalThis.__ROS2_MEMORY_DB__ = initial;
+  return initial;
 }
 
 function saveLocalData(data: LocalData): void {
+  globalThis.__ROS2_MEMORY_DB__ = data;
   try {
     fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(data, null, 2), "utf-8");
   } catch (err) {
-    console.error("Failed to write to local db:", err);
+    console.warn("로컬 DB 파일 저장 실패 (메모리 보존 유지):", err);
   }
 }
 
 // ---------------- Tabs ----------------
 export async function getTabs(): Promise<Tab[]> {
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("tabs")
       .select("*")
       .order("sort", { ascending: true })
       .order("id", { ascending: true });
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase getTabs error:", error);
+      throw error;
+    }
     return data || [];
   }
 
@@ -92,6 +114,7 @@ export async function createTab(name: string, sort?: number): Promise<Tab> {
   const trimmed = name.trim();
   if (!trimmed) throw new Error("탭 이름은 필수입니다.");
 
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("tabs")
@@ -101,7 +124,10 @@ export async function createTab(name: string, sort?: number): Promise<Tab> {
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase createTab error:", error);
+      throw error;
+    }
     return data;
   }
 
@@ -122,9 +148,13 @@ export async function createTab(name: string, sort?: number): Promise<Tab> {
 }
 
 export async function deleteTab(id: number): Promise<void> {
+  const supabase = getSupabase();
   if (supabase) {
     const { error } = await supabase.from("tabs").delete().eq("id", id);
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase deleteTab error:", error);
+      throw error;
+    }
     return;
   }
 
@@ -136,17 +166,32 @@ export async function deleteTab(id: number): Promise<void> {
 
 // ---------------- Snippets ----------------
 export async function getSnippets(tabId?: number): Promise<Snippet[]> {
+  const supabase = getSupabase();
   if (supabase) {
-    let query = supabase
-      .from("snippets")
-      .select("*, tabs(name)")
-      .order("created_at", { ascending: false });
-    if (tabId) {
-      query = query.eq("tab_id", tabId);
+    // 탭 정보와 스니펫 정보를 안전하게 가져와 매핑 (PostgREST foreign key 캐시 에러 원천 방지)
+    const [snippetsRes, tabsRes] = await Promise.all([
+      supabase
+        .from("snippets")
+        .select("*")
+        .order("created_at", { ascending: false }),
+      supabase.from("tabs").select("id, name"),
+    ]);
+
+    if (snippetsRes.error) {
+      console.error("Supabase getSnippets error:", snippetsRes.error);
+      throw snippetsRes.error;
     }
-    const { data, error } = await query;
-    if (error) throw error;
-    return (data || []) as Snippet[];
+
+    const tabMap = new Map((tabsRes.data || []).map((t) => [t.id, t.name]));
+    let items = (snippetsRes.data || []).map((s) => ({
+      ...s,
+      tabs: s.tab_id ? { name: tabMap.get(s.tab_id) || "" } : null,
+    }));
+
+    if (tabId) {
+      items = items.filter((s) => s.tab_id === tabId);
+    }
+    return items as Snippet[];
   }
 
   const local = getLocalData();
@@ -174,6 +219,7 @@ export async function createSnippet(input: {
     throw new Error("본문 내용은 필수입니다.");
   }
 
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("snippets")
@@ -184,10 +230,28 @@ export async function createSnippet(input: {
         kind: input.kind,
         body: input.body,
       })
-      .select("*, tabs(name)")
+      .select()
       .single();
-    if (error) throw error;
-    return data;
+
+    if (error) {
+      console.error("Supabase createSnippet error:", error);
+      throw error;
+    }
+
+    let tabName = "";
+    if (data.tab_id) {
+      const { data: tabData } = await supabase
+        .from("tabs")
+        .select("name")
+        .eq("id", data.tab_id)
+        .single();
+      tabName = tabData?.name || "";
+    }
+
+    return {
+      ...data,
+      tabs: tabName ? { name: tabName } : null,
+    };
   }
 
   const local = getLocalData();
@@ -208,9 +272,13 @@ export async function createSnippet(input: {
 }
 
 export async function deleteSnippet(id: number): Promise<void> {
+  const supabase = getSupabase();
   if (supabase) {
     const { error } = await supabase.from("snippets").delete().eq("id", id);
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase deleteSnippet error:", error);
+      throw error;
+    }
     return;
   }
 
@@ -221,12 +289,16 @@ export async function deleteSnippet(id: number): Promise<void> {
 
 // ---------------- Commands ----------------
 export async function getCommands(): Promise<Command[]> {
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("commands")
       .select("*")
       .order("created_at", { ascending: true });
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase getCommands error:", error);
+      throw error;
+    }
     return data || [];
   }
 
@@ -244,6 +316,7 @@ export async function createCommand(input: {
   const trimmed = input.body.trim();
   if (!trimmed) throw new Error("명령어는 필수입니다.");
 
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("commands")
@@ -254,7 +327,10 @@ export async function createCommand(input: {
       })
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase createCommand error:", error);
+      throw error;
+    }
     return data;
   }
 
@@ -272,6 +348,7 @@ export async function createCommand(input: {
 }
 
 export async function toggleCommandPinned(id: number, pinned: boolean): Promise<Command> {
+  const supabase = getSupabase();
   if (supabase) {
     const { data, error } = await supabase
       .from("commands")
@@ -279,7 +356,10 @@ export async function toggleCommandPinned(id: number, pinned: boolean): Promise<
       .eq("id", id)
       .select()
       .single();
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase toggleCommandPinned error:", error);
+      throw error;
+    }
     return data;
   }
 
@@ -292,9 +372,13 @@ export async function toggleCommandPinned(id: number, pinned: boolean): Promise<
 }
 
 export async function deleteCommand(id: number): Promise<void> {
+  const supabase = getSupabase();
   if (supabase) {
     const { error } = await supabase.from("commands").delete().eq("id", id);
-    if (error) throw error;
+    if (error) {
+      console.error("Supabase deleteCommand error:", error);
+      throw error;
+    }
     return;
   }
 

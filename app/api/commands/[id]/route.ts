@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { toggleCommandPinned, deleteCommand } from "@/lib/db";
 import { verifyAdminPassword } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }

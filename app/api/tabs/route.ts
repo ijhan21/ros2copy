@@ -2,10 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getTabs, createTab } from "@/lib/db";
 import { verifyAdminPassword } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   try {
     const tabs = await getTabs();
-    return NextResponse.json(tabs);
+    return NextResponse.json(tabs, {
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate",
+      },
+    });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Failed to fetch tabs" }, { status: 500 });
   }

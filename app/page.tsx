@@ -14,14 +14,16 @@ export default function StudentPage() {
   const [tabCopied, setTabCopied] = useState(false);
   const [mobileView, setMobileView] = useState<"code" | "commands">("code");
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 데이터 가져오기
+  // 데이터 가져오기 (캐시 원천 무효화: timestamp 쿼리 및 no-store)
   const fetchData = useCallback(async () => {
     try {
+      const now = Date.now();
       const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
-        fetch("/api/tabs", { cache: "no-store" }),
-        fetch("/api/snippets", { cache: "no-store" }),
-        fetch("/api/commands", { cache: "no-store" }),
+        fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
+        fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
+        fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
       ]);
 
       if (tabsRes.ok) {
@@ -40,8 +42,14 @@ export default function StudentPage() {
       console.error("데이터 갱신 중 오류:", err);
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
+
+  const handleManualRefresh = () => {
+    setIsRefreshing(true);
+    fetchData();
+  };
 
   // 초기 로드 및 10초 주기 폴링
   useEffect(() => {
@@ -60,11 +68,6 @@ export default function StudentPage() {
   const handleCopyEntireTab = async () => {
     if (filteredSnippets.length === 0) return;
     try {
-      const currentTabName =
-        selectedTabId === null
-          ? "전체"
-          : tabs.find((t) => t.id === selectedTabId)?.name || "현재 탭";
-
       const joinedContent = filteredSnippets
         .map((s, idx) => {
           const headerLine = `# [${idx + 1}/${filteredSnippets.length}] ${s.title || "코드"} ${s.path ? `(${s.path})` : ""}`;
@@ -119,7 +122,7 @@ export default function StudentPage() {
               mobileView === "commands" ? "hidden md:flex" : "flex"
             }`}
           >
-            {/* 탭 줄과 '이 탭 전체 복사' 컨트롤 */}
+            {/* 탭 줄과 '이 탭 전체 복사' / 수동 새로고침 컨트롤 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-[#E4E4E7] dark:border-[#2E2E36]">
               {/* 탭 목록 (스크롤 가능, 트인 탭 디자인) */}
               <div className="flex items-center gap-1 overflow-x-auto custom-scroll -mb-px">
@@ -149,17 +152,25 @@ export default function StudentPage() {
                 ))}
               </div>
 
-              {/* 이 탭 전체 복사 단추 */}
-              {filteredSnippets.length > 0 && (
-                <div className="pb-2 sm:pb-0 shrink-0">
+              {/* 우측 단추들: 지금 새로고침 & 탭 전체 복사 */}
+              <div className="flex items-center gap-2 pb-2 sm:pb-0 shrink-0">
+                <button
+                  onClick={handleManualRefresh}
+                  disabled={isRefreshing}
+                  className="min-h-[36px] px-2.5 text-xs font-medium rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#E4E4E7] dark:border-[#2E2E36] text-[#52525B] dark:text-[#A1A1AA] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
+                >
+                  {isRefreshing ? "가져오는 중..." : "지금 새로고침"}
+                </button>
+
+                {filteredSnippets.length > 0 && (
                   <button
                     onClick={handleCopyEntireTab}
                     className="min-h-[36px] px-3 text-xs font-semibold rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#0F766E] text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#CCFBF1]/30 dark:hover:bg-[#115E59]/30 transition-colors"
                   >
                     {tabCopied ? "전체 복사함" : "이 탭 전체 복사"}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
 
             {/* 코드 카드 2열 격자 */}

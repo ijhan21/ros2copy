@@ -4,6 +4,7 @@ export interface Tab {
   id: number;
   name: string;
   sort: number;
+  deleted_at?: string | null;
   created_at: string;
 }
 

@@ -15,9 +15,10 @@ import {
 } from "@/lib/supabaseClient";
 
 interface UndoItem {
-  type: "snippet" | "command";
+  type: "snippet" | "command" | "tab";
   id: number;
   expiresAt: number;
+  tabData?: Tab;
 }
 
 export default function TeacherPage() {
@@ -216,20 +217,20 @@ export default function TeacherPage() {
     }
   };
 
-  // 탭 삭제
+  // 탭 지우기 (소프트 삭제 및 8초 되돌리기 연동)
   const handleDeleteTab = async (tab: Tab) => {
     if (!requirePassword()) return;
 
     const snippetCount = allSnippets.filter((s) => s.tab_id === tab.id).length;
+    let confirmed = false;
     if (snippetCount > 0) {
-      const confirmed = window.confirm(
-        `'${tab.name}' 탭에 코드가 ${snippetCount}개 있습니다. 삭제하시겠습니까?`
+      confirmed = window.confirm(
+        `이 탭에 코드 ${snippetCount}개가 있습니다. 함께 감춥니다. 지우시겠습니까?`
       );
-      if (!confirmed) return;
     } else {
-      const confirmed = window.confirm(`'${tab.name}' 탭을 삭제하시겠습니까?`);
-      if (!confirmed) return;
+      confirmed = window.confirm(`'${tab.name}' 탭을 지우시겠습니까?`);
     }
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/tabs/${tab.id}`, {
@@ -247,16 +248,38 @@ export default function TeacherPage() {
           setSelectedTabId(nextId);
           if (nextId) localStorage.setItem("selectedTeacherTabId", nextId.toString());
         }
-        showNotice(`'${tab.name}' 탭을 삭제했습니다.`);
+
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+        const expiresAt = Date.now() + 8000;
+        setUndoItem({ type: "tab", id: tab.id, expiresAt, tabData: tab });
+        setUndoSecondsLeft(8);
+
+        undoIntervalRef.current = setInterval(() => {
+          setUndoSecondsLeft((prev) => {
+            if (prev <= 1) {
+              if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        undoTimeoutRef.current = setTimeout(() => {
+          setUndoItem(null);
+        }, 8000);
+
+        showNotice(`'${tab.name}' 탭을 지웠습니다. (8초 안에 되돌릴 수 있습니다)`);
         refreshAllData();
       } else {
         const err = await res.json();
         if (res.status === 401) setIsAuthModalOpen(true);
-        showError(err.error || "탭 삭제 실패");
+        showError(err.error || "탭 지우기 실패");
       }
     } catch (err) {
       console.error(err);
-      showError("탭 삭제 중 오류 발생");
+      showError("탭 지우기 중 오류 발생");
     }
   };
 
@@ -457,7 +480,11 @@ export default function TeacherPage() {
     setUndoItem(null);
 
     try {
-      const endpoint = type === "snippet" ? `/api/snippets/${id}` : `/api/commands/${id}`;
+      let endpoint = "";
+      if (type === "snippet") endpoint = `/api/snippets/${id}`;
+      else if (type === "command") endpoint = `/api/commands/${id}`;
+      else if (type === "tab") endpoint = `/api/tabs/${id}`;
+
       const res = await fetch(endpoint, {
         method: "PATCH",
         headers: {
@@ -469,6 +496,10 @@ export default function TeacherPage() {
 
       if (res.ok) {
         showNotice("복구되었습니다.");
+        if (type === "tab" && undoItem.tabData) {
+          setSelectedTabId(undoItem.tabData.id);
+          localStorage.setItem("selectedTeacherTabId", undoItem.tabData.id.toString());
+        }
         refreshAllData();
       } else {
         showError("되돌리기 실패");

@@ -13,12 +13,13 @@ create table tabs (
   id bigserial primary key,
   name text not null unique,          -- "실습 3차시", "오늘 질문"
   sort int not null default 0,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
 
 create table snippets (
   id bigserial primary key,
-  tab_id bigint references tabs(id) on delete cascade,
+  tab_id bigint references tabs(id),  -- cascade 제거
   title text,
   path text,                          -- "~/ros2_ws/src/my_py_pkg/my_py_pkg/"
   kind text not null,                 -- python / bash / xml / yaml / text

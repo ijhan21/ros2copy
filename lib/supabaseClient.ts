@@ -33,6 +33,7 @@ export async function fetchTabsFromClient(): Promise<Tab[] | null> {
   const { data, error } = await supabase
     .from("tabs")
     .select("*")
+    .is("deleted_at", null)
     .order("sort", { ascending: true })
     .order("id", { ascending: true });
 
@@ -43,44 +44,33 @@ export async function fetchTabsFromClient(): Promise<Tab[] | null> {
   return data || [];
 }
 
-function isMissingColumnError(error: any): boolean {
-  if (!error) return false;
-  if (error.code === "42703") return true;
-  const msg = (error.message || "").toLowerCase();
-  return msg.includes("does not exist");
-}
-
 export async function fetchSnippetsFromClient(tabId?: number | null): Promise<Snippet[] | null> {
   const supabase = getBrowserSupabase();
   if (!supabase) return null;
 
-  let snippetsRes = await supabase
-    .from("snippets")
-    .select("*")
-    .is("deleted_at", null)
-    .order("pinned", { ascending: false })
-    .order("created_at", { ascending: false });
-
-  if (snippetsRes.error && isMissingColumnError(snippetsRes.error)) {
-    snippetsRes = await supabase
+  const [snippetsRes, tabsRes] = await Promise.all([
+    supabase
       .from("snippets")
       .select("*")
-      .order("created_at", { ascending: false });
-  }
+      .is("deleted_at", null)
+      .order("pinned", { ascending: false })
+      .order("created_at", { ascending: false }),
+    supabase.from("tabs").select("id, name").is("deleted_at", null),
+  ]);
 
   if (snippetsRes.error) {
     console.error("클라이언트 Supabase snippets 조회 실패:", snippetsRes.error);
     return null;
   }
 
-  const tabsRes = await supabase.from("tabs").select("id, name");
-  const tabMap = new Map((tabsRes.data || []).map((t) => [t.id, t.name]));
-  let items = (snippetsRes.data || []).map((s) => ({
-    ...s,
-    pinned: s.pinned ?? false,
-    deleted_at: s.deleted_at ?? null,
-    tabs: s.tab_id ? { name: tabMap.get(s.tab_id) || "" } : null,
-  }));
+  const activeTabs = tabsRes.data || [];
+  const activeTabMap = new Map(activeTabs.map((t) => [t.id, t.name]));
+  let items = (snippetsRes.data || [])
+    .filter((s) => !s.tab_id || activeTabMap.has(s.tab_id))
+    .map((s) => ({
+      ...s,
+      tabs: s.tab_id ? { name: activeTabMap.get(s.tab_id) || "" } : null,
+    }));
 
   if (tabId) {
     items = items.filter((s) => s.tab_id === tabId);
@@ -92,28 +82,16 @@ export async function fetchCommandsFromClient(): Promise<Command[] | null> {
   const supabase = getBrowserSupabase();
   if (!supabase) return null;
 
-  let res = await supabase
+  const { data, error } = await supabase
     .from("commands")
     .select("*")
     .is("deleted_at", null)
     .order("created_at", { ascending: true })
     .order("id", { ascending: true });
 
-  if (res.error && isMissingColumnError(res.error)) {
-    res = await supabase
-      .from("commands")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true });
-  }
-
-  if (res.error) {
-    console.error("클라이언트 Supabase commands 조회 실패:", res.error);
+  if (error) {
+    console.error("클라이언트 Supabase commands 조회 실패:", error);
     return null;
   }
-  return (res.data || []).map((c) => ({
-    ...c,
-    deleted_at: c.deleted_at ?? null,
-    pinned: c.pinned ?? false,
-  }));
+  return data || [];
 }

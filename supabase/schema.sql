@@ -7,13 +7,14 @@ create table if not exists tabs (
   id bigserial primary key,
   name text not null unique,          -- "실습 3차시", "오늘 질문"
   sort int not null default 0,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
 
--- 2. snippets 테이블
+-- 2. snippets 테이블 (외래키 cascade 제거)
 create table if not exists snippets (
   id bigserial primary key,
-  tab_id bigint references tabs(id) on delete cascade,
+  tab_id bigint references tabs(id),
   title text,
   path text,                          -- "~/ros2_ws/src/my_py_pkg/my_py_pkg/"
   kind text not null,                 -- python / bash / xml / yaml / text
@@ -34,11 +35,19 @@ create table if not exists commands (
 );
 
 -- ==========================================
--- 기존 테이블 마이그레이션 (필요 시 실행)
+-- 기존 테이블 마이그레이션 DDL
 -- ==========================================
+-- 탭 soft delete 지원
+alter table tabs add column if not exists deleted_at timestamptz;
+
+-- 스니펫/명령어 soft delete & 핀 지원
 alter table snippets add column if not exists deleted_at timestamptz;
 alter table snippets add column if not exists pinned boolean not null default false;
 alter table commands add column if not exists deleted_at timestamptz;
+
+-- 탭 삭제 시 코드 연쇄 삭제 방지 (외래키 cascade 제거)
+alter table snippets drop constraint if exists snippets_tab_id_fkey;
+alter table snippets add constraint snippets_tab_id_fkey foreign key (tab_id) references tabs(id);
 
 -- ==========================================
 -- Row Level Security (RLS) 설정

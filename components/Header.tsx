@@ -1,0 +1,55 @@
+"use client";
+
+import Link from "next/link";
+import ThemeToggle from "./ThemeToggle";
+
+interface HeaderProps {
+  isTeacher?: boolean;
+}
+
+export default function Header({ isTeacher = false }: HeaderProps) {
+  return (
+    <header className="w-full bg-[#FFFFFF] dark:bg-[#1A1A1E] border-b border-[#E4E4E7] dark:border-[#2E2E36] px-4 py-3 shrink-0">
+      <div className="max-w-7xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-baseline gap-3 flex-wrap">
+          <Link
+            href="/"
+            className="text-lg sm:text-xl font-bold tracking-tight text-[#18181B] dark:text-[#F4F4F5]"
+          >
+            ROS2 코드 보드
+          </Link>
+          <span className="text-xs text-[#71717A]">
+            못 따라 치셨으면 여기서 찾아 복사하십시오
+          </span>
+        </div>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {!isTeacher && (
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-[#52525B] dark:text-[#A1A1AA] bg-[#F7F7F8] dark:bg-[#121214] border border-[#E4E4E7] dark:border-[#2E2E36] rounded-full">
+              <span className="w-2 h-2 rounded-full bg-[#0F766E] animate-pulse" />
+              <span>10초마다 새로 가져옵니다</span>
+            </div>
+          )}
+
+          <ThemeToggle />
+
+          {isTeacher ? (
+            <Link
+              href="/"
+              className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] text-[#52525B] dark:text-[#A1A1AA] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
+            >
+              학생 화면으로
+            </Link>
+          ) : (
+            <Link
+              href="/올리기"
+              className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#0F766E] text-[#0F766E] dark:text-[#14B8A6] rounded-[8px] bg-[#CCFBF1]/30 dark:bg-[#115E59]/30 hover:bg-[#CCFBF1] dark:hover:bg-[#115E59] transition-colors"
+            >
+              강사 올리기
+            </Link>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}

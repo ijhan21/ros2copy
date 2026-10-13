@@ -18,14 +18,14 @@ export default function Header({ isTeacher = false }: HeaderProps) {
           >
             ROS2 코드 보드
           </Link>
-          <span className="text-xs text-[#71717A]">
-            못 따라 치셨으면 여기서 찾아 복사하십시오
+          <span className="text-xs text-[#52525B] dark:text-[#9CA3AF]">
+            수업에서 쓴 코드와 명령을 모아 둡니다. 눌러서 복사해 가십시오.
           </span>
         </div>
 
         <div className="flex items-center gap-2.5 flex-wrap">
           {!isTeacher && (
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-[#52525B] dark:text-[#A1A1AA] bg-[#F7F7F8] dark:bg-[#121214] border border-[#E4E4E7] dark:border-[#2E2E36] rounded-full">
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs text-[#52525B] dark:text-[#D1D5DB] bg-[#F7F7F8] dark:bg-[#121214] border border-[#E4E4E7] dark:border-[#2E2E36] rounded-full">
               <span className="w-2 h-2 rounded-full bg-[#0F766E] animate-pulse" />
               <span>10초마다 새로 가져옵니다</span>
             </div>
@@ -36,7 +36,7 @@ export default function Header({ isTeacher = false }: HeaderProps) {
           {isTeacher ? (
             <Link
               href="/"
-              className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] text-[#52525B] dark:text-[#A1A1AA] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
+              className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
             >
               학생 화면으로
             </Link>

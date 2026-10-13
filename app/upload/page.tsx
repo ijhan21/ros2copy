@@ -14,6 +14,12 @@ import {
   fetchCommandsFromClient,
 } from "@/lib/supabaseClient";
 
+interface UndoItem {
+  type: "snippet" | "command";
+  id: number;
+  expiresAt: number;
+}
+
 export default function TeacherPage() {
   // 암호 관련
   const [password, setPassword] = useState<string>("");
@@ -46,6 +52,12 @@ export default function TeacherPage() {
   const [cmdMemo, setCmdMemo] = useState("");
   const [isSubmittingCommand, setIsSubmittingCommand] = useState(false);
 
+  // 8초 되돌리기 상태
+  const [undoItem, setUndoItem] = useState<UndoItem | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState(8);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const undoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 1. 암호 로드
@@ -71,7 +83,6 @@ export default function TeacherPage() {
       let snips = clientSnippets;
       let cmds = clientCommands;
 
-      // 클라이언트 SDK 조회가 null인 경우 서버 API로 fallback
       if (tabsData === null || snips === null || cmds === null) {
         const now = Date.now();
         const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
@@ -111,7 +122,6 @@ export default function TeacherPage() {
     refreshAllData();
   }, [refreshAllData]);
 
-  // 알림 및 에러 배너 헬퍼
   const showNotice = (msg: string) => {
     setNotification(msg);
     setTimeout(() => setNotification(null), 3000);
@@ -146,7 +156,7 @@ export default function TeacherPage() {
         localStorage.setItem("BOARD_PASSWORD", inputPwd);
         setIsAuthModalOpen(false);
         setTempPassword("");
-        showNotice("암호가 인증되었습니다.");
+        showNotice("암호가 확인되었습니다.");
         refreshAllData();
       } else {
         const data = await res.json();
@@ -157,17 +167,15 @@ export default function TeacherPage() {
     }
   };
 
-  // 암호 입력 확인 가드
   const requirePassword = (): boolean => {
     if (!password) {
       setIsAuthModalOpen(true);
-      showError("먼저 강사 암호를 입력하십시오.");
+      showError("강사 암호를 입력합니다.");
       return false;
     }
     return true;
   };
 
-  // 탭 선택 핸들러
   const handleSelectTab = (tabId: number) => {
     setSelectedTabId(tabId);
     localStorage.setItem("selectedTeacherTabId", tabId.toString());
@@ -195,13 +203,11 @@ export default function TeacherPage() {
         handleSelectTab(createdTab.id);
         setNewTabName("");
         setIsCreatingTab(false);
-        showNotice(`'${createdTab.name}' 탭을 만들었습니다.`);
+        showNotice(`'${createdTab.name}' 탭을 생성했습니다.`);
         refreshAllData();
       } else {
         const err = await res.json();
-        if (res.status === 401) {
-          setIsAuthModalOpen(true);
-        }
+        if (res.status === 401) setIsAuthModalOpen(true);
         showError(err.error || "탭 생성 실패");
       }
     } catch (err) {
@@ -217,7 +223,7 @@ export default function TeacherPage() {
     const snippetCount = allSnippets.filter((s) => s.tab_id === tab.id).length;
     if (snippetCount > 0) {
       const confirmed = window.confirm(
-        `'${tab.name}' 탭에 코드가 ${snippetCount}개 들어 있습니다. 정말 삭제하시겠습니까?`
+        `'${tab.name}' 탭에 코드가 ${snippetCount}개 있습니다. 삭제하시겠습니까?`
       );
       if (!confirmed) return;
     } else {
@@ -245,9 +251,7 @@ export default function TeacherPage() {
         refreshAllData();
       } else {
         const err = await res.json();
-        if (res.status === 401) {
-          setIsAuthModalOpen(true);
-        }
+        if (res.status === 401) setIsAuthModalOpen(true);
         showError(err.error || "탭 삭제 실패");
       }
     } catch (err) {
@@ -256,7 +260,6 @@ export default function TeacherPage() {
     }
   };
 
-  // 코드 본문 변경 시 자동 종류 판별
   const handleCodeChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setCodeBody(val);
@@ -265,7 +268,6 @@ export default function TeacherPage() {
     }
   };
 
-  // 뱃지 클릭 시 다음 종류로 순환
   const handleCycleKind = () => {
     const current = userOverriddenKind || detectedKind;
     const next = getNextSnippetKind(current);
@@ -320,9 +322,7 @@ export default function TeacherPage() {
         textareaRef.current?.focus();
       } else {
         const err = await res.json();
-        if (res.status === 401) {
-          setIsAuthModalOpen(true);
-        }
+        if (res.status === 401) setIsAuthModalOpen(true);
         showError(err.error || "코드 올리기 실패");
       }
     } catch (err) {
@@ -340,6 +340,7 @@ export default function TeacherPage() {
     }
   };
 
+  // 명령 한 줄 전송
   const handleSubmitCommand = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!requirePassword()) return;
@@ -364,13 +365,11 @@ export default function TeacherPage() {
         setCommands((prev) => [...prev, created]);
         setCmdBody("");
         setCmdMemo("");
-        showNotice("명령어를 보냈습니다.");
+        showNotice("명령어를 전송했습니다.");
         refreshAllData();
       } else {
         const err = await res.json();
-        if (res.status === 401) {
-          setIsAuthModalOpen(true);
-        }
+        if (res.status === 401) setIsAuthModalOpen(true);
         showError(err.error || "명령 보내기 실패");
       }
     } catch (err) {
@@ -378,6 +377,105 @@ export default function TeacherPage() {
       showError("명령 전송 중 네트워크 오류");
     } finally {
       setIsSubmittingCommand(false);
+    }
+  };
+
+  // 8초 영구 삭제
+  const executePermanentDelete = async (type: "snippet" | "command", id: number) => {
+    try {
+      const endpoint = type === "snippet" ? `/api/snippets/${id}` : `/api/commands/${id}`;
+      await fetch(`${endpoint}?permanent=true`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": password,
+        },
+      });
+    } catch (err) {
+      console.error("영구 삭제 오류:", err);
+    }
+  };
+
+  // 명령 삭제 (되돌리기 8초 연동)
+  const handleDeleteCommand = async (id: number) => {
+    if (!requirePassword()) return;
+    const confirmed = window.confirm("이 명령어를 지우시겠습니까? (8초 안에 되돌릴 수 있습니다)");
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/commands/${id}`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": password,
+        },
+      });
+
+      if (res.ok) {
+        setCommands((prev) => prev.filter((c) => c.id !== id));
+
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+        const expiresAt = Date.now() + 8000;
+        setUndoItem({ type: "command", id, expiresAt });
+        setUndoSecondsLeft(8);
+
+        undoIntervalRef.current = setInterval(() => {
+          setUndoSecondsLeft((prev) => {
+            if (prev <= 1) {
+              if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        undoTimeoutRef.current = setTimeout(() => {
+          executePermanentDelete("command", id);
+          setUndoItem(null);
+        }, 8000);
+
+        refreshAllData();
+      } else {
+        const err = await res.json();
+        if (res.status === 401) setIsAuthModalOpen(true);
+        showError(err.error || "명령 삭제 실패");
+      }
+    } catch (err) {
+      console.error("명령 삭제 오류:", err);
+      showError("명령 삭제 오류");
+    }
+  };
+
+  // 되돌리기 실행
+  const handleUndo = async () => {
+    if (!undoItem) return;
+
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+    const { type, id } = undoItem;
+    setUndoItem(null);
+
+    try {
+      const endpoint = type === "snippet" ? `/api/snippets/${id}` : `/api/commands/${id}`;
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-board-password": password,
+        },
+        body: JSON.stringify({ deleted_at: null }),
+      });
+
+      if (res.ok) {
+        showNotice("복구되었습니다.");
+        refreshAllData();
+      } else {
+        showError("되돌리기 실패");
+      }
+    } catch (err) {
+      console.error(err);
+      showError("되돌리기 중 통신 오류");
     }
   };
 
@@ -407,30 +505,6 @@ export default function TeacherPage() {
     } catch (err) {
       console.error("핀 토글 오류:", err);
       showError("핀 설정 오류");
-    }
-  };
-
-  const handleDeleteCommand = async (id: number) => {
-    if (!requirePassword()) return;
-    try {
-      const res = await fetch(`/api/commands/${id}`, {
-        method: "DELETE",
-        headers: {
-          "x-board-password": password,
-        },
-      });
-
-      if (res.ok) {
-        setCommands((prev) => prev.filter((c) => c.id !== id));
-        refreshAllData();
-      } else {
-        const err = await res.json();
-        if (res.status === 401) setIsAuthModalOpen(true);
-        showError(err.error || "명령 삭제 실패");
-      }
-    } catch (err) {
-      console.error("명령 삭제 오류:", err);
-      showError("명령 삭제 오류");
     }
   };
 
@@ -464,10 +538,10 @@ export default function TeacherPage() {
                 password ? "bg-[#0F766E]" : "bg-red-500 animate-pulse"
               }`}
             />
-            <span className="font-medium text-[#52525B] dark:text-[#A1A1AA]">
+            <span className="font-medium text-[#52525B] dark:text-[#D1D5DB]">
               {password
-                ? "강사 암호가 등록되어 있습니다."
-                : "강사 암호가 입력되지 않았습니다. 암호가 없으면 작업이 거부됩니다."}
+                ? "강사 암호 인증됨"
+                : "강사 암호가 입력되지 않았습니다."}
             </span>
           </div>
           <button
@@ -484,9 +558,9 @@ export default function TeacherPage() {
 
         {/* 1. 탭 관리 줄 */}
         <section className="bg-[#FFFFFF] dark:bg-[#1A1A1E] p-4 rounded-[13px] border border-[#E4E4E7] dark:border-[#2E2E36]">
-          <div className="text-xs font-semibold text-[#71717A] mb-2.5 flex items-center justify-between">
-            <span>탭 관리 — 코드를 올릴 탭을 선택하십시오</span>
-            <span className="text-[11px] text-[#A1A1AA]">
+          <div className="text-xs font-semibold text-[#52525B] dark:text-[#D1D5DB] mb-2.5 flex items-center justify-between">
+            <span>탭 선택 및 관리</span>
+            <span className="text-[11px] text-[#71717A] dark:text-[#9CA3AF]">
               선택된 탭: {tabs.find((t) => t.id === selectedTabId)?.name || "없음"}
             </span>
           </div>
@@ -500,7 +574,7 @@ export default function TeacherPage() {
                   className={`inline-flex items-center rounded-full text-xs transition-colors pl-3 pr-1.5 py-1 ${
                     isSelected
                       ? "bg-[#0F766E] text-white"
-                      : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#A1A1AA] border border-[#E4E4E7] dark:border-[#2E2E36] hover:bg-[#E4E4E7]"
+                      : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] border border-[#E4E4E7] dark:border-[#2E2E36] hover:bg-[#E4E4E7]"
                   }`}
                 >
                   <button
@@ -551,7 +625,7 @@ export default function TeacherPage() {
             ) : (
               <button
                 onClick={() => setIsCreatingTab(true)}
-                className="min-h-[32px] px-3 text-xs font-medium border border-dashed border-[#71717A] text-[#52525B] dark:text-[#A1A1AA] hover:text-[#0F766E] hover:border-[#0F766E] rounded-full transition-colors"
+                className="min-h-[32px] px-3 text-xs font-medium border border-dashed border-[#71717A] text-[#52525B] dark:text-[#D1D5DB] hover:text-[#0F766E] hover:border-[#0F766E] rounded-full transition-colors"
               >
                 + 새 탭
               </button>
@@ -566,7 +640,7 @@ export default function TeacherPage() {
               코드 올리기
             </h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs text-[#71717A]">종류 자동 판별:</span>
+              <span className="text-xs text-[#52525B] dark:text-[#9CA3AF]">종류 자동 판별:</span>
               <button
                 type="button"
                 onClick={handleCycleKind}
@@ -581,7 +655,7 @@ export default function TeacherPage() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[#71717A] mb-1">
+              <label className="block text-xs text-[#52525B] dark:text-[#9CA3AF] mb-1">
                 제목 (선택 — 비우면 차시 순번 자동 부여)
               </label>
               <input
@@ -594,7 +668,7 @@ export default function TeacherPage() {
             </div>
 
             <div>
-              <label className="block text-xs text-[#71717A] mb-1">
+              <label className="block text-xs text-[#52525B] dark:text-[#9CA3AF] mb-1">
                 경로 (선택)
               </label>
               <input
@@ -608,13 +682,13 @@ export default function TeacherPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-[#71717A] mb-1">
+            <label className="block text-xs text-[#52525B] dark:text-[#9CA3AF] mb-1">
               코드 내용 (Ctrl+Enter 로 즉시 올리기)
             </label>
             <textarea
               ref={textareaRef}
               rows={12}
-              placeholder="여기에 코드를 붙여넣으십시오..."
+              placeholder="코드 내용을 입력하거나 붙여넣습니다"
               value={codeBody}
               onChange={handleCodeChange}
               onKeyDown={handleKeyDownInTextarea}
@@ -623,7 +697,7 @@ export default function TeacherPage() {
           </div>
 
           <div className="flex items-center justify-end gap-3">
-            <span className="text-xs text-[#71717A]">
+            <span className="text-xs text-[#71717A] dark:text-[#9CA3AF]">
               Ctrl + Enter 로도 등록됩니다
             </span>
             <button
@@ -642,7 +716,9 @@ export default function TeacherPage() {
         <div className="max-w-4xl mx-auto w-full p-3 sm:p-4">
           {recentCommands.length > 0 && (
             <div className="mb-3 max-h-32 overflow-y-auto space-y-1.5 custom-scroll pr-1">
-              <div className="text-[11px] text-[#71717A] mb-1">방금 보낸 명령 ({commands.length}개)</div>
+              <div className="text-[11px] text-[#A1A1AA] dark:text-[#D1D5DB] mb-1">
+                방금 보낸 명령 ({commands.length}개)
+              </div>
               {recentCommands.map((cmd) => (
                 <div
                   key={cmd.id}
@@ -650,7 +726,7 @@ export default function TeacherPage() {
                 >
                   <div className="flex items-center gap-2 overflow-hidden flex-1">
                     {cmd.memo && (
-                      <span className="text-[11px] text-[#7A8290] shrink-0">
+                      <span className="text-[11px] text-[#A1A1AA] dark:text-[#D1D5DB] shrink-0">
                         [{cmd.memo}]
                       </span>
                     )}
@@ -672,7 +748,7 @@ export default function TeacherPage() {
                     </button>
                     <button
                       onClick={() => handleDeleteCommand(cmd.id)}
-                      className="px-2 py-0.5 text-[11px] rounded-[4px] bg-[#1C1C22] text-[#71717A] hover:text-red-400 border border-[#3F3F46]"
+                      className="px-2 py-0.5 text-[11px] rounded-[4px] bg-[#1C1C22] text-red-400 hover:text-red-300 border border-[#3F3F46]"
                     >
                       지우기
                     </button>
@@ -692,7 +768,7 @@ export default function TeacherPage() {
               </span>
               <input
                 type="text"
-                placeholder="터미널 명령어를 입력하고 Enter를 치십시오"
+                placeholder="터미널 명령어를 입력하고 Enter를 누르면 등록됩니다"
                 value={cmdBody}
                 onChange={(e) => setCmdBody(e.target.value)}
                 className="w-full min-h-[44px] bg-transparent font-mono text-xs sm:text-sm text-[#D4D7DD] outline-none"
@@ -718,6 +794,21 @@ export default function TeacherPage() {
         </div>
       </footer>
 
+      {/* 8초 되돌리기 띠 */}
+      {undoItem && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-[10px] bg-[#18181B] dark:bg-[#26262E] text-white border border-[#3F3F46] shadow-2xl">
+          <span className="text-xs font-medium">
+            지웠습니다 ({undoSecondsLeft}초)
+          </span>
+          <button
+            onClick={handleUndo}
+            className="px-3 py-1 text-xs font-bold rounded-[6px] bg-[#0F766E] text-white hover:bg-[#115E59] transition-colors"
+          >
+            되돌리기
+          </button>
+        </div>
+      )}
+
       {/* 암호 입력 모달 */}
       {isAuthModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -725,8 +816,8 @@ export default function TeacherPage() {
             <h3 className="text-base font-bold text-[#18181B] dark:text-[#F4F4F5] mb-2">
               강사 암호 입력
             </h3>
-            <p className="text-xs text-[#71717A] mb-4">
-              코드를 올리고 관리하려면 Vercel 환경변수(BOARD_PASSWORD)에 설정된 암호를 입력하십시오.
+            <p className="text-xs text-[#52525B] dark:text-[#D1D5DB] mb-4">
+              강사 암호를 입력합니다.
             </p>
 
             <form onSubmit={handleVerifyPassword} className="space-y-4">

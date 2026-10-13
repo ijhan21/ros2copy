@@ -19,9 +19,13 @@ export function formatRelativeTime(dateString: string): string {
   return `${diffDay}일 전`;
 }
 
-export function isWithinTenMinutes(dateString: string): boolean {
+// 3분 이내 올라온 카드 판별
+export function isWithinThreeMinutes(dateString: string): boolean {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
-  return diffMs >= 0 && diffMs <= 10 * 60 * 1000;
+  return diffMs >= 0 && diffMs <= 3 * 60 * 1000;
 }
+
+// 하위 호환 별칭
+export const isWithinTenMinutes = isWithinThreeMinutes;

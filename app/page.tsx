@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Header from "@/components/Header";
 import CodeCard from "@/components/CodeCard";
 import CommandStream from "@/components/CommandStream";
@@ -10,6 +10,13 @@ import {
   fetchSnippetsFromClient,
   fetchCommandsFromClient,
 } from "@/lib/supabaseClient";
+
+interface UndoItem {
+  type: "snippet" | "command";
+  id: number;
+  name?: string;
+  expiresAt: number;
+}
 
 export default function StudentPage() {
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -21,27 +28,38 @@ export default function StudentPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 데이터 가져오기: 브라우저 Supabase 직접 조회 1순위 (Network 탭에 supabase.co 요청 발생)
+  // 강사 권한 상태
+  const [hasTeacherPassword, setHasTeacherPassword] = useState(false);
+  const [teacherPassword, setTeacherPassword] = useState("");
+
+  // 8초 되돌리기 (Undo) 상태
+  const [undoItem, setUndoItem] = useState<UndoItem | null>(null);
+  const [undoSecondsLeft, setUndoSecondsLeft] = useState(8);
+  const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const undoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 강사 암호 확인
+  useEffect(() => {
+    const saved = localStorage.getItem("BOARD_PASSWORD")?.trim();
+    if (saved) {
+      setHasTeacherPassword(true);
+      setTeacherPassword(saved);
+    }
+  }, []);
+
+  // 데이터 가져오기: 브라우저 Supabase 직접 조회 1순위
   const fetchData = useCallback(async () => {
     try {
-      // 1. 브라우저 Supabase 클라이언트로 직접 조회 시도
       const [clientTabs, clientSnippets, clientCommands] = await Promise.all([
         fetchTabsFromClient(),
         fetchSnippetsFromClient(),
         fetchCommandsFromClient(),
       ]);
 
-      if (clientTabs !== null) {
-        setTabs(clientTabs);
-      }
-      if (clientSnippets !== null) {
-        setSnippets(clientSnippets);
-      }
-      if (clientCommands !== null) {
-        setCommands(clientCommands);
-      }
+      if (clientTabs !== null) setTabs(clientTabs);
+      if (clientSnippets !== null) setSnippets(clientSnippets);
+      if (clientCommands !== null) setCommands(clientCommands);
 
-      // 만약 브라우저 Supabase 클라이언트가 환경변수 부재 등으로 null인 경우 서버 API로 fallback
       if (clientTabs === null || clientSnippets === null || clientCommands === null) {
         const now = Date.now();
         const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
@@ -76,12 +94,206 @@ export default function StudentPage() {
     fetchData();
   };
 
-  // 초기 로드 및 10초 주기 폴링
   useEffect(() => {
     fetchData();
     const interval = setInterval(fetchData, 10000);
     return () => clearInterval(interval);
   }, [fetchData]);
+
+  // 카드 수정 (고치기)
+  const handleUpdateSnippet = async (id: number, data: Partial<Snippet>): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/snippets/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-board-password": teacherPassword,
+        },
+        body: JSON.stringify(data),
+      });
+
+      if (res.ok) {
+        await fetchData();
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || "수정 실패");
+        return false;
+      }
+    } catch (err) {
+      console.error(err);
+      alert("수정 중 오류 발생");
+      return false;
+    }
+  };
+
+  // 8초 타이머 완료 후 영구 삭제 실행
+  const executePermanentDelete = async (type: "snippet" | "command", id: number) => {
+    try {
+      const endpoint = type === "snippet" ? `/api/snippets/${id}` : `/api/commands/${id}`;
+      await fetch(`${endpoint}?permanent=true`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": teacherPassword,
+        },
+      });
+    } catch (err) {
+      console.error("영구 삭제 실패:", err);
+    }
+  };
+
+  // 카드 지우기 (8초 되돌리기 띠 시작)
+  const handleDeleteSnippet = async (id: number): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/snippets/${id}`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": teacherPassword,
+        },
+      });
+
+      if (res.ok) {
+        // 즉시 화면에서 감춤
+        setSnippets((prev) => prev.filter((s) => s.id !== id));
+
+        // 기존 되돌리기 정리
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+        const expiresAt = Date.now() + 8000;
+        setUndoItem({ type: "snippet", id, expiresAt });
+        setUndoSecondsLeft(8);
+
+        undoIntervalRef.current = setInterval(() => {
+          setUndoSecondsLeft((prev) => {
+            if (prev <= 1) {
+              if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        undoTimeoutRef.current = setTimeout(() => {
+          executePermanentDelete("snippet", id);
+          setUndoItem(null);
+        }, 8000);
+
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || "삭제 실패");
+        return false;
+      }
+    } catch (err) {
+      console.error(err);
+      alert("삭제 중 오류");
+      return false;
+    }
+  };
+
+  // 명령 지우기 (8초 되돌리기 연동)
+  const handleDeleteCommand = async (id: number): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/commands/${id}`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": teacherPassword,
+        },
+      });
+
+      if (res.ok) {
+        setCommands((prev) => prev.filter((c) => c.id !== id));
+
+        if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+        if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+        const expiresAt = Date.now() + 8000;
+        setUndoItem({ type: "command", id, expiresAt });
+        setUndoSecondsLeft(8);
+
+        undoIntervalRef.current = setInterval(() => {
+          setUndoSecondsLeft((prev) => {
+            if (prev <= 1) {
+              if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        undoTimeoutRef.current = setTimeout(() => {
+          executePermanentDelete("command", id);
+          setUndoItem(null);
+        }, 8000);
+
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || "명령 삭제 실패");
+        return false;
+      }
+    } catch (err) {
+      console.error(err);
+      alert("명령 삭제 중 오류");
+      return false;
+    }
+  };
+
+  // 되돌리기 실행
+  const handleUndo = async () => {
+    if (!undoItem) return;
+
+    if (undoTimeoutRef.current) clearTimeout(undoTimeoutRef.current);
+    if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+
+    const { type, id } = undoItem;
+    setUndoItem(null);
+
+    try {
+      const endpoint = type === "snippet" ? `/api/snippets/${id}` : `/api/commands/${id}`;
+      const res = await fetch(endpoint, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-board-password": teacherPassword,
+        },
+        body: JSON.stringify({ deleted_at: null }),
+      });
+
+      if (res.ok) {
+        await fetchData();
+      } else {
+        alert("되돌리기 실패");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("되돌리기 중 통신 오류");
+    }
+  };
+
+  // 카드 핀 토글 (맨 위로 올리기)
+  const handleTogglePinSnippet = async (id: number, pinned: boolean): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/snippets/${id}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          "x-board-password": teacherPassword,
+        },
+        body: JSON.stringify({ pinned }),
+      });
+
+      if (res.ok) {
+        await fetchData();
+        return true;
+      }
+      return false;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
 
   // 현재 고른 탭에 해당하는 스니펫 필터링
   const filteredSnippets =
@@ -112,7 +324,7 @@ export default function StudentPage() {
     <div className="min-h-screen flex flex-col bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5]">
       <Header />
 
-      {/* 모바일 뷰 전환 단추 (화면 폭 < 768px 일 때만 노출) */}
+      {/* 모바일 뷰 전환 단추 */}
       <div className="md:hidden px-4 pt-3 pb-1 border-b border-[#E4E4E7] dark:border-[#2E2E36] bg-[#FFFFFF] dark:bg-[#1A1A1E]">
         <div className="grid grid-cols-2 gap-2">
           <button
@@ -120,7 +332,7 @@ export default function StudentPage() {
             className={`min-h-[36px] text-xs font-semibold rounded-[8px] transition-colors ${
               mobileView === "code"
                 ? "bg-[#0F766E] text-white"
-                : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#A1A1AA] border border-[#E4E4E7] dark:border-[#2E2E36]"
+                : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] border border-[#E4E4E7] dark:border-[#2E2E36]"
             }`}
           >
             코드 카드 ({filteredSnippets.length})
@@ -130,7 +342,7 @@ export default function StudentPage() {
             className={`min-h-[36px] text-xs font-semibold rounded-[8px] transition-colors ${
               mobileView === "commands"
                 ? "bg-[#0F766E] text-white"
-                : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#A1A1AA] border border-[#E4E4E7] dark:border-[#2E2E36]"
+                : "bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] border border-[#E4E4E7] dark:border-[#2E2E36]"
             }`}
           >
             명령 흐름 ({commands.length})
@@ -141,22 +353,22 @@ export default function StudentPage() {
       {/* 메인 레이아웃 본체 */}
       <main className="max-w-7xl mx-auto w-full p-3 sm:p-5 flex-1 flex flex-col">
         <div className="flex flex-col lg:flex-row gap-5 items-start flex-1">
-          {/* 왼쪽: 탭 줄 + 코드 카드 (모바일에서는 mobileView === 'code' 일 때 노출) */}
+          {/* 왼쪽: 탭 줄 + 코드 카드 */}
           <div
             className={`flex-1 w-full flex flex-col min-w-0 ${
               mobileView === "commands" ? "hidden md:flex" : "flex"
             }`}
           >
-            {/* 탭 줄과 '이 탭 전체 복사' / 수동 새로고침 컨트롤 */}
+            {/* 탭 줄과 상단 제어 바 */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 border-b border-[#E4E4E7] dark:border-[#2E2E36]">
-              {/* 탭 목록 (스크롤 가능, 트인 탭 디자인) */}
+              {/* 탭 목록 */}
               <div className="flex items-center gap-1 overflow-x-auto custom-scroll -mb-px">
                 <button
                   onClick={() => setSelectedTabId(null)}
                   className={`min-h-[38px] px-3.5 py-1.5 text-xs font-medium rounded-t-[8px] border-t border-l border-r whitespace-nowrap transition-colors ${
                     selectedTabId === null
                       ? "bg-[#F7F7F8] dark:bg-[#121214] border-[#E4E4E7] dark:border-[#2E2E36] border-b-transparent text-[#0F766E] dark:text-[#14B8A6] font-bold"
-                      : "bg-[#FFFFFF] dark:bg-[#1A1A1E] border-transparent text-[#52525B] dark:text-[#A1A1AA] hover:text-[#18181B] dark:hover:text-[#F4F4F5]"
+                      : "bg-[#FFFFFF] dark:bg-[#1A1A1E] border-transparent text-[#52525B] dark:text-[#D1D5DB] hover:text-[#18181B] dark:hover:text-[#F4F4F5]"
                   }`}
                 >
                   전체
@@ -169,7 +381,7 @@ export default function StudentPage() {
                     className={`min-h-[38px] px-3.5 py-1.5 text-xs font-medium rounded-t-[8px] border-t border-l border-r whitespace-nowrap transition-colors ${
                       selectedTabId === tab.id
                         ? "bg-[#F7F7F8] dark:bg-[#121214] border-[#E4E4E7] dark:border-[#2E2E36] border-b-transparent text-[#0F766E] dark:text-[#14B8A6] font-bold"
-                        : "bg-[#FFFFFF] dark:bg-[#1A1A1E] border-transparent text-[#52525B] dark:text-[#A1A1AA] hover:text-[#18181B] dark:hover:text-[#F4F4F5]"
+                        : "bg-[#FFFFFF] dark:bg-[#1A1A1E] border-transparent text-[#52525B] dark:text-[#D1D5DB] hover:text-[#18181B] dark:hover:text-[#F4F4F5]"
                     }`}
                   >
                     {tab.name}
@@ -177,12 +389,12 @@ export default function StudentPage() {
                 ))}
               </div>
 
-              {/* 우측 단추들: 지금 새로고침 & 탭 전체 복사 */}
+              {/* 우측 단추들 */}
               <div className="flex items-center gap-2 pb-2 sm:pb-0 shrink-0">
                 <button
                   onClick={handleManualRefresh}
                   disabled={isRefreshing}
-                  className="min-h-[36px] px-2.5 text-xs font-medium rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#E4E4E7] dark:border-[#2E2E36] text-[#52525B] dark:text-[#A1A1AA] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
+                  className="min-h-[36px] px-2.5 text-xs font-medium rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#E4E4E7] dark:border-[#2E2E36] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#F7F7F8] dark:hover:bg-[#26262E] transition-colors"
                 >
                   {isRefreshing ? "가져오는 중..." : "지금 새로고침"}
                 </button>
@@ -200,37 +412,63 @@ export default function StudentPage() {
 
             {/* 코드 카드 2열 격자 */}
             {loading ? (
-              <div className="p-12 text-center text-xs text-[#71717A]">
+              <div className="p-12 text-center text-xs text-[#52525B] dark:text-[#D1D5DB]">
                 코드를 불러오고 있습니다...
               </div>
             ) : filteredSnippets.length === 0 ? (
               <div className="p-16 text-center border border-dashed border-[#E4E4E7] dark:border-[#2E2E36] rounded-[13px] bg-[#FFFFFF] dark:bg-[#1A1A1E]">
-                <p className="text-sm font-medium text-[#71717A]">
-                  아직 등록된 코드가 없습니다.
+                <p className="text-sm font-medium text-[#52525B] dark:text-[#D1D5DB]">
+                  등록된 코드가 없습니다.
                 </p>
-                <p className="text-xs text-[#A1A1AA] mt-1">
-                  강사가 코드를 올리면 10초 안에 자동으로 나타납니다.
+                <p className="text-xs text-[#71717A] dark:text-[#9CA3AF] mt-1">
+                  올라온 코드가 있으면 여기에 바로 나타납니다.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 {filteredSnippets.map((snippet) => (
-                  <CodeCard key={snippet.id} snippet={snippet} />
+                  <CodeCard
+                    key={snippet.id}
+                    snippet={snippet}
+                    isTeacher={hasTeacherPassword}
+                    onUpdate={handleUpdateSnippet}
+                    onDelete={handleDeleteSnippet}
+                    onTogglePin={handleTogglePinSnippet}
+                  />
                 ))}
               </div>
             )}
           </div>
 
-          {/* 오른쪽: 명령 흐름 패널 (모바일에서는 mobileView === 'commands' 일 때 노출) */}
+          {/* 오른쪽: 명령 흐름 패널 */}
           <div
             className={`w-full lg:w-auto ${
               mobileView === "code" ? "hidden md:block" : "block"
             }`}
           >
-            <CommandStream commands={commands} />
+            <CommandStream
+              commands={commands}
+              isTeacher={hasTeacherPassword}
+              onDeleteCommand={handleDeleteCommand}
+            />
           </div>
         </div>
       </main>
+
+      {/* 8초 되돌리기 띠 (화면 하단 플로팅) */}
+      {undoItem && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-[10px] bg-[#18181B] dark:bg-[#26262E] text-white border border-[#3F3F46] shadow-2xl animate-fade-in">
+          <span className="text-xs font-medium">
+            지웠습니다 ({undoSecondsLeft}초)
+          </span>
+          <button
+            onClick={handleUndo}
+            className="px-3 py-1 text-xs font-bold rounded-[6px] bg-[#0F766E] text-white hover:bg-[#115E59] transition-colors"
+          >
+            되돌리기
+          </button>
+        </div>
+      )}
     </div>
   );
 }

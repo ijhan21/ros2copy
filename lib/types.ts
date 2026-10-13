@@ -14,6 +14,8 @@ export interface Snippet {
   path: string | null;
   kind: SnippetKind;
   body: string;
+  pinned: boolean;
+  deleted_at: string | null;
   created_at: string;
   tabs?: {
     name: string;
@@ -25,5 +27,6 @@ export interface Command {
   body: string;
   memo: string | null;
   pinned: boolean;
+  deleted_at: string | null;
   created_at: string;
 }

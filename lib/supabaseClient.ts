@@ -51,6 +51,8 @@ export async function fetchSnippetsFromClient(tabId?: number | null): Promise<Sn
     supabase
       .from("snippets")
       .select("*")
+      .is("deleted_at", null)
+      .order("pinned", { ascending: false })
       .order("created_at", { ascending: false }),
     supabase.from("tabs").select("id, name"),
   ]);
@@ -79,7 +81,9 @@ export async function fetchCommandsFromClient(): Promise<Command[] | null> {
   const { data, error } = await supabase
     .from("commands")
     .select("*")
-    .order("created_at", { ascending: true });
+    .is("deleted_at", null)
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true });
 
   if (error) {
     console.error("클라이언트 Supabase commands 조회 실패:", error);

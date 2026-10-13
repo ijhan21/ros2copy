@@ -40,7 +40,6 @@ interface LocalData {
 
 const LOCAL_DB_PATH = path.join("/tmp", ".ros2copy_local_db.json");
 
-// globalThis에 메모리 캐시 유지 (서버리스 인스턴스 생명주기 동안 보존)
 declare global {
   // eslint-disable-next-line no-var
   var __ROS2_MEMORY_DB__: LocalData | undefined;
@@ -171,11 +170,13 @@ export async function deleteTab(id: number): Promise<void> {
 export async function getSnippets(tabId?: number): Promise<Snippet[]> {
   const supabase = getSupabase();
   if (supabase) {
-    // 탭 정보와 스니펫 정보를 안전하게 가져와 매핑 (PostgREST foreign key 캐시 에러 원천 방지)
+    // deleted_at is null 및 pinned desc, created_at desc 정렬
     const [snippetsRes, tabsRes] = await Promise.all([
       supabase
         .from("snippets")
         .select("*")
+        .is("deleted_at", null)
+        .order("pinned", { ascending: false })
         .order("created_at", { ascending: false }),
       supabase.from("tabs").select("id, name"),
     ]);
@@ -199,16 +200,22 @@ export async function getSnippets(tabId?: number): Promise<Snippet[]> {
 
   const local = getLocalData();
   const tabMap = new Map(local.tabs.map((t) => [t.id, t.name]));
-  let result = local.snippets.map((s) => ({
-    ...s,
-    tabs: s.tab_id ? { name: tabMap.get(s.tab_id) || "" } : null,
-  }));
+  let result = local.snippets
+    .filter((s) => !s.deleted_at)
+    .map((s) => ({
+      ...s,
+      tabs: s.tab_id ? { name: tabMap.get(s.tab_id) || "" } : null,
+    }));
+
   if (tabId) {
     result = result.filter((s) => s.tab_id === tabId);
   }
-  return result.sort(
-    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-  );
+  return result.sort((a, b) => {
+    if (a.pinned !== b.pinned) {
+      return a.pinned ? -1 : 1;
+    }
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
 }
 
 export async function createSnippet(input: {
@@ -217,6 +224,7 @@ export async function createSnippet(input: {
   path?: string | null;
   kind: SnippetKind;
   body: string;
+  pinned?: boolean;
 }): Promise<Snippet> {
   if (!input.body || !input.body.trim()) {
     throw new Error("본문 내용은 필수입니다.");
@@ -232,6 +240,7 @@ export async function createSnippet(input: {
         path: input.path?.trim() || null,
         kind: input.kind,
         body: input.body,
+        pinned: input.pinned ?? false,
       })
       .select()
       .single();
@@ -266,6 +275,8 @@ export async function createSnippet(input: {
     path: input.path?.trim() || null,
     kind: input.kind,
     body: input.body,
+    pinned: input.pinned ?? false,
+    deleted_at: null,
     created_at: new Date().toISOString(),
     tabs: tab ? { name: tab.name } : null,
   };
@@ -274,19 +285,74 @@ export async function createSnippet(input: {
   return newSnippet;
 }
 
-export async function deleteSnippet(id: number): Promise<void> {
+export async function updateSnippet(
+  id: number,
+  data: Partial<Snippet>
+): Promise<Snippet> {
   const supabase = getSupabase();
   if (supabase) {
-    const { error } = await supabase.from("snippets").delete().eq("id", id);
+    const updatePayload: Record<string, any> = {};
+    if (data.title !== undefined) updatePayload.title = data.title;
+    if (data.path !== undefined) updatePayload.path = data.path;
+    if (data.kind !== undefined) updatePayload.kind = data.kind;
+    if (data.body !== undefined) updatePayload.body = data.body;
+    if (data.pinned !== undefined) updatePayload.pinned = data.pinned;
+    if (data.deleted_at !== undefined) updatePayload.deleted_at = data.deleted_at;
+
+    const { data: updated, error } = await supabase
+      .from("snippets")
+      .update(updatePayload)
+      .eq("id", id)
+      .select()
+      .single();
+
     if (error) {
-      console.error("Supabase deleteSnippet error:", error);
+      console.error("Supabase updateSnippet error:", error);
       throw error;
+    }
+    return updated;
+  }
+
+  const local = getLocalData();
+  const target = local.snippets.find((s) => s.id === id);
+  if (!target) throw new Error("스니펫을 찾을 수 없습니다.");
+
+  if (data.title !== undefined) target.title = data.title;
+  if (data.path !== undefined) target.path = data.path;
+  if (data.kind !== undefined) target.kind = data.kind;
+  if (data.body !== undefined) target.body = data.body;
+  if (data.pinned !== undefined) target.pinned = data.pinned;
+  if (data.deleted_at !== undefined) target.deleted_at = data.deleted_at;
+
+  saveLocalData(local);
+  return target;
+}
+
+export async function deleteSnippet(id: number, permanent = false): Promise<void> {
+  const supabase = getSupabase();
+  if (supabase) {
+    if (permanent) {
+      const { error } = await supabase.from("snippets").delete().eq("id", id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("snippets")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
     }
     return;
   }
 
   const local = getLocalData();
-  local.snippets = local.snippets.filter((s) => s.id !== id);
+  if (permanent) {
+    local.snippets = local.snippets.filter((s) => s.id !== id);
+  } else {
+    const target = local.snippets.find((s) => s.id === id);
+    if (target) {
+      target.deleted_at = new Date().toISOString();
+    }
+  }
   saveLocalData(local);
 }
 
@@ -294,10 +360,14 @@ export async function deleteSnippet(id: number): Promise<void> {
 export async function getCommands(): Promise<Command[]> {
   const supabase = getSupabase();
   if (supabase) {
+    // deleted_at is null 및 created_at, id 동점 처리 정렬
     const { data, error } = await supabase
       .from("commands")
       .select("*")
-      .order("created_at", { ascending: true });
+      .is("deleted_at", null)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true });
+
     if (error) {
       console.error("Supabase getCommands error:", error);
       throw error;
@@ -306,9 +376,13 @@ export async function getCommands(): Promise<Command[]> {
   }
 
   const local = getLocalData();
-  return [...local.commands].sort(
-    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-  );
+  return local.commands
+    .filter((c) => !c.deleted_at)
+    .sort(
+      (a, b) =>
+        new Date(a.created_at).getTime() - new Date(b.created_at).getTime() ||
+        a.id - b.id
+    );
 }
 
 export async function createCommand(input: {
@@ -343,6 +417,7 @@ export async function createCommand(input: {
     body: trimmed,
     memo: input.memo?.trim() || null,
     pinned: input.pinned ?? false,
+    deleted_at: null,
     created_at: new Date().toISOString(),
   };
   local.commands.push(newCommand);
@@ -350,42 +425,82 @@ export async function createCommand(input: {
   return newCommand;
 }
 
-export async function toggleCommandPinned(id: number, pinned: boolean): Promise<Command> {
+export async function updateCommand(
+  id: number,
+  data: Partial<Command>
+): Promise<Command> {
   const supabase = getSupabase();
   if (supabase) {
-    const { data, error } = await supabase
+    const updatePayload: Record<string, any> = {};
+    if (data.pinned !== undefined) updatePayload.pinned = data.pinned;
+    if (data.memo !== undefined) updatePayload.memo = data.memo;
+    if (data.body !== undefined) updatePayload.body = data.body;
+    if (data.deleted_at !== undefined) updatePayload.deleted_at = data.deleted_at;
+
+    const { data: updated, error } = await supabase
       .from("commands")
-      .update({ pinned })
+      .update(updatePayload)
       .eq("id", id)
       .select()
       .single();
-    if (error) {
-      console.error("Supabase toggleCommandPinned error:", error);
-      throw error;
-    }
-    return data;
+
+    if (error) throw error;
+    return updated;
   }
 
   const local = getLocalData();
   const target = local.commands.find((c) => c.id === id);
   if (!target) throw new Error("명령어를 찾을 수 없습니다.");
-  target.pinned = pinned;
+
+  if (data.pinned !== undefined) target.pinned = data.pinned;
+  if (data.memo !== undefined) target.memo = data.memo;
+  if (data.body !== undefined) target.body = data.body;
+  if (data.deleted_at !== undefined) target.deleted_at = data.deleted_at;
+
   saveLocalData(local);
   return target;
 }
 
-export async function deleteCommand(id: number): Promise<void> {
+export async function toggleCommandPinned(id: number, pinned: boolean): Promise<Command> {
+  return updateCommand(id, { pinned });
+}
+
+export async function deleteCommand(id: number, permanent = false): Promise<void> {
   const supabase = getSupabase();
   if (supabase) {
-    const { error } = await supabase.from("commands").delete().eq("id", id);
-    if (error) {
-      console.error("Supabase deleteCommand error:", error);
-      throw error;
+    if (permanent) {
+      const { error } = await supabase.from("commands").delete().eq("id", id);
+      if (error) throw error;
+    } else {
+      const { error } = await supabase
+        .from("commands")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
     }
     return;
   }
 
   const local = getLocalData();
-  local.commands = local.commands.filter((c) => c.id !== id);
+  if (permanent) {
+    local.commands = local.commands.filter((c) => c.id !== id);
+  } else {
+    const target = local.commands.find((c) => c.id === id);
+    if (target) {
+      target.deleted_at = new Date().toISOString();
+    }
+  }
   saveLocalData(local);
+}
+
+// ---------------- Ping Database (Supabase 7일 멈춤 방지) ----------------
+export async function pingDatabase(): Promise<{ ok: boolean; at: string }> {
+  const supabase = getSupabase();
+  if (supabase) {
+    const { error } = await supabase.from("tabs").select("id").limit(1);
+    if (error) {
+      console.error("Supabase ping error:", error);
+    }
+  }
+  return { ok: true, at: new Date().toISOString() };
 }

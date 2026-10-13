@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
 :root {
   --bg-page: #F7F7F8;
   --bg-card: #FFFFFF;
@@ -22,8 +24,8 @@
   --bg-card: #1A1A1E;
   --border-color: #2E2E36;
   --text-main: #F4F4F5;
-  --text-sub: #A1A1AA;
-  --text-muted: #71717A;
+  --text-sub: #D1D5DB;
+  --text-muted: #9CA3AF;
   
   --primary-teal: #14B8A6;
   --primary-teal-light: #134E4A;
@@ -34,6 +36,14 @@
   --command-bg: #1C1C22;
 }
 
+html.dark {
+  color-scheme: dark;
+}
+
+html:not(.dark) {
+  color-scheme: light;
+}
+
 body {
   background-color: var(--bg-page);
   color: var(--text-main);
@@ -41,13 +51,14 @@ body {
   overflow-x: hidden;
   margin: 0;
   padding: 0;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 code, pre, .font-mono {
   font-family: var(--font-jetbrains), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
-/* 줄 번호 CSS 카운터 - 번호 복사 방지 */
+/* 줄 번호 CSS 카운터 및 들여쓰기 보존 */
 .code-container {
   counter-reset: line-num;
 }
@@ -63,17 +74,25 @@ code, pre, .font-mono {
 .show-line-numbers .code-line::before {
   content: counter(line-num);
   display: inline-block;
-  width: 2.5rem;
+  width: 2.75rem;
   padding-right: 1rem;
   text-align: right;
-  color: #71717A;
+  color: #9CA3AF;
   user-select: none;
   -webkit-user-select: none;
   flex-shrink: 0;
+  line-height: 1.5rem;
 }
 
 .hide-line-numbers .code-line::before {
   display: none;
+}
+
+/* 줄 번호를 켜든 끄든 항상 white-space: pre 유지 (들여쓰기 절대 보존) */
+.code-line-text {
+  white-space: pre !important;
+  font-family: inherit;
+  line-height: 1.5rem;
 }
 
 /* 가로 스크롤바 미려하게 */

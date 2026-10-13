@@ -18,6 +18,8 @@ create table if not exists snippets (
   path text,                          -- "~/ros2_ws/src/my_py_pkg/my_py_pkg/"
   kind text not null,                 -- python / bash / xml / yaml / text
   body text not null,
+  pinned boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
 
@@ -27,8 +29,16 @@ create table if not exists commands (
   body text not null,                 -- 한 줄
   memo text,                          -- 선택, 한 줄 설명
   pinned boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
+
+-- ==========================================
+-- 기존 테이블 마이그레이션 (필요 시 실행)
+-- ==========================================
+alter table snippets add column if not exists deleted_at timestamptz;
+alter table snippets add column if not exists pinned boolean not null default false;
+alter table commands add column if not exists deleted_at timestamptz;
 
 -- ==========================================
 -- Row Level Security (RLS) 설정
@@ -43,5 +53,5 @@ create policy "누구나 tabs 조회 가능" on tabs for select using (true);
 create policy "누구나 snippets 조회 가능" on snippets for select using (true);
 create policy "누구나 commands 조회 가능" on commands for select using (true);
 
--- 참고: insert / update / delete 는 서버 쪽 API에서 SUPABASE_SERVICE_ROLE_KEY를 사용하여 처리하므로,
+-- 참고: insert / update / delete 는 서버 쪽 API에서 SUPABASE_SECRET_KEY를 사용하여 처리하므로,
 -- anon 키를 통한 클라이언트 직접 수정은 원천 차단됩니다.

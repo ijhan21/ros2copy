@@ -23,6 +23,8 @@ create table snippets (
   path text,                          -- "~/ros2_ws/src/my_py_pkg/my_py_pkg/"
   kind text not null,                 -- python / bash / xml / yaml / text
   body text not null,
+  pinned boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
 
@@ -31,6 +33,7 @@ create table commands (
   body text not null,                 -- 한 줄
   memo text,                          -- 선택, 한 줄 설명
   pinned boolean not null default false,
+  deleted_at timestamptz,
   created_at timestamptz default now()
 );
 
@@ -73,3 +76,9 @@ create policy "누구나 commands 조회 가능" on commands for select using (t
 1. 브라우저에서 `/올리기`로 접속하고 암호를 입력해 해당 차시 탭을 고릅니다.
 2. 본문 상자에 코드를 붙여넣고 `Ctrl+Enter`를 치면 학생 화면 상단에 즉시 게시됩니다.
 3. 실행할 CLI 명령어는 화면 맨 아래에 입력하고 `Enter`만 치면 전송됩니다.
+
+---
+
+## 5. Supabase 멈춤 방지 (Vercel Cron)
+
+`vercel.json`에 정의된 매일 새벽 3시 `/api/ping` 예약 작업은 Supabase 무료 플랜의 7일 미사용 자동 정지(Pause)를 막는 설정입니다. 이 설정을 지우면 일주일 뒤 사이트가 죽습니다.

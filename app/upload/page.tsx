@@ -8,6 +8,11 @@ import {
   getNextSnippetKind,
   getKindBadgeInfo,
 } from "@/lib/highlighter";
+import {
+  fetchTabsFromClient,
+  fetchSnippetsFromClient,
+  fetchCommandsFromClient,
+} from "@/lib/supabaseClient";
 
 export default function TeacherPage() {
   // 암호 관련
@@ -53,21 +58,35 @@ export default function TeacherPage() {
     }
   }, []);
 
-  // 2. 전체 데이터 실시간 가져오기 (캐시 방지 타임스탬프)
+  // 2. 전체 데이터 실시간 가져오기 (클라이언트 직접 조회 1순위)
   const refreshAllData = useCallback(async () => {
     try {
-      const now = Date.now();
-      const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
-        fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
-        fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
-        fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+      const [clientTabs, clientSnippets, clientCommands] = await Promise.all([
+        fetchTabsFromClient(),
+        fetchSnippetsFromClient(),
+        fetchCommandsFromClient(),
       ]);
 
-      if (tabsRes.ok) {
-        const tabsData: Tab[] = await tabsRes.json();
-        setTabs(tabsData);
+      let tabsData = clientTabs;
+      let snips = clientSnippets;
+      let cmds = clientCommands;
 
-        // 로컬스토리지 기억 탭 복원
+      // 클라이언트 SDK 조회가 null인 경우 서버 API로 fallback
+      if (tabsData === null || snips === null || cmds === null) {
+        const now = Date.now();
+        const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
+          fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
+          fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
+          fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+        ]);
+
+        if (tabsData === null && tabsRes.ok) tabsData = await tabsRes.json();
+        if (snips === null && snippetsRes.ok) snips = await snippetsRes.json();
+        if (cmds === null && commandsRes.ok) cmds = await commandsRes.json();
+      }
+
+      if (tabsData) {
+        setTabs(tabsData);
         const storedTabId = localStorage.getItem("selectedTeacherTabId");
         if (storedTabId) {
           const parsed = parseInt(storedTabId, 10);
@@ -81,15 +100,8 @@ export default function TeacherPage() {
         }
       }
 
-      if (snippetsRes.ok) {
-        const snips: Snippet[] = await snippetsRes.json();
-        setAllSnippets(snips);
-      }
-
-      if (commandsRes.ok) {
-        const cmds: Command[] = await commandsRes.json();
-        setCommands(cmds);
-      }
+      if (snips) setAllSnippets(snips);
+      if (cmds) setCommands(cmds);
     } catch (err) {
       console.error("데이터 로드 오류:", err);
     }
@@ -268,7 +280,6 @@ export default function TeacherPage() {
     if (!requirePassword()) return;
     if (!codeBody.trim() || isSubmittingSnippet) return;
 
-    // 제목이 비어있으면 자동 생성: "{선택된탭이름} · {순번}번째"
     let finalTitle = title.trim();
     if (!finalTitle) {
       const currentTab = tabs.find((t) => t.id === selectedTabId);
@@ -298,7 +309,6 @@ export default function TeacherPage() {
         const created: Snippet = await res.json();
         setAllSnippets((prev) => [created, ...prev]);
 
-        // 글상자 및 폼 초기화 (페이지와 선택된 탭은 그대로 유지)
         setCodeBody("");
         setTitle("");
         setFilePath("");
@@ -323,7 +333,6 @@ export default function TeacherPage() {
     }
   };
 
-  // Ctrl + Enter 로 코드 올리기
   const handleKeyDownInTextarea = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
       e.preventDefault();
@@ -331,7 +340,6 @@ export default function TeacherPage() {
     }
   };
 
-  // 명령 한 줄 보내기 실행 (Enter 시 바로 전송)
   const handleSubmitCommand = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!requirePassword()) return;
@@ -373,7 +381,6 @@ export default function TeacherPage() {
     }
   };
 
-  // 명령 핀 토글
   const handleTogglePin = async (cmd: Command) => {
     if (!requirePassword()) return;
     try {
@@ -403,7 +410,6 @@ export default function TeacherPage() {
     }
   };
 
-  // 명령 삭제
   const handleDeleteCommand = async (id: number) => {
     if (!requirePassword()) return;
     try {
@@ -428,21 +434,20 @@ export default function TeacherPage() {
     }
   };
 
-  // 최근 보낸 명령 5개
   const recentCommands = [...commands].slice(-5).reverse();
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5] pb-48">
       <Header isTeacher />
 
-      {/* 상단 알림 띠 (성공) */}
+      {/* 상단 알림 띠 */}
       {notification && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-[8px] bg-[#0F766E] text-white text-sm font-semibold shadow-lg transition-all">
           {notification}
         </div>
       )}
 
-      {/* 상단 에러 배너 (실패 피드백) */}
+      {/* 상단 에러 배너 */}
       {errorMessage && (
         <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 px-5 py-2.5 rounded-[8px] bg-red-600 text-white text-sm font-semibold shadow-lg transition-all">
           {errorMessage}
@@ -477,7 +482,7 @@ export default function TeacherPage() {
           </button>
         </div>
 
-        {/* 1. 탭 관리 줄 (맨 위) */}
+        {/* 1. 탭 관리 줄 */}
         <section className="bg-[#FFFFFF] dark:bg-[#1A1A1E] p-4 rounded-[13px] border border-[#E4E4E7] dark:border-[#2E2E36]">
           <div className="text-xs font-semibold text-[#71717A] mb-2.5 flex items-center justify-between">
             <span>탭 관리 — 코드를 올릴 탭을 선택하십시오</span>
@@ -519,7 +524,6 @@ export default function TeacherPage() {
               );
             })}
 
-            {/* "+ 새 탭" 버튼 또는 탭 생성 입력칸 */}
             {isCreatingTab ? (
               <div className="inline-flex items-center gap-1.5 p-1 rounded-full border border-[#0F766E] bg-[#FFFFFF] dark:bg-[#1A1A1E]">
                 <input
@@ -555,7 +559,7 @@ export default function TeacherPage() {
           </div>
         </section>
 
-        {/* 2. 코드 올리기 (가운데) */}
+        {/* 2. 코드 올리기 */}
         <section className="bg-[#FFFFFF] dark:bg-[#1A1A1E] p-5 rounded-[13px] border border-[#E4E4E7] dark:border-[#2E2E36] flex flex-col gap-4">
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold text-[#18181B] dark:text-[#F4F4F5]">
@@ -575,7 +579,6 @@ export default function TeacherPage() {
             </div>
           </div>
 
-          {/* 제목 및 경로 입력 칸 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-[#71717A] mb-1">
@@ -604,7 +607,6 @@ export default function TeacherPage() {
             </div>
           </div>
 
-          {/* 큰 글상자 (textarea) */}
           <div>
             <label className="block text-xs text-[#71717A] mb-1">
               코드 내용 (Ctrl+Enter 로 즉시 올리기)
@@ -620,7 +622,6 @@ export default function TeacherPage() {
             />
           </div>
 
-          {/* 올리기 단추 */}
           <div className="flex items-center justify-end gap-3">
             <span className="text-xs text-[#71717A]">
               Ctrl + Enter 로도 등록됩니다
@@ -636,10 +637,9 @@ export default function TeacherPage() {
         </section>
       </main>
 
-      {/* 3. 명령 한 줄 보내기 (화면 맨 아래 붙박이, 어두운 띠) */}
+      {/* 3. 명령 한 줄 보내기 */}
       <footer className="fixed bottom-0 left-0 right-0 z-40 bg-[#1C1C22] border-t border-[#2E2E36] text-[#D4D7DD] shadow-2xl">
         <div className="max-w-4xl mx-auto w-full p-3 sm:p-4">
-          {/* 방금 보낸 줄 몇 개 */}
           {recentCommands.length > 0 && (
             <div className="mb-3 max-h-32 overflow-y-auto space-y-1.5 custom-scroll pr-1">
               <div className="text-[11px] text-[#71717A] mb-1">방금 보낸 명령 ({commands.length}개)</div>
@@ -682,7 +682,6 @@ export default function TeacherPage() {
             </div>
           )}
 
-          {/* 한 줄 입력 폼 */}
           <form
             onSubmit={handleSubmitCommand}
             className="flex items-center gap-2 flex-wrap sm:flex-nowrap"
@@ -727,7 +726,7 @@ export default function TeacherPage() {
               강사 암호 입력
             </h3>
             <p className="text-xs text-[#71717A] mb-4">
-              코드를 올리고 관리하려면 Vercel 환경변수(BOARD_PASSWORD)에 설정된 암호를 입력하십시오. (기본값: ros2)
+              코드를 올리고 관리하려면 Vercel 환경변수(BOARD_PASSWORD)에 설정된 암호를 입력하십시오.
             </p>
 
             <form onSubmit={handleVerifyPassword} className="space-y-4">

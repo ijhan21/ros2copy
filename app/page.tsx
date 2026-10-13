@@ -5,6 +5,11 @@ import Header from "@/components/Header";
 import CodeCard from "@/components/CodeCard";
 import CommandStream from "@/components/CommandStream";
 import { Tab, Snippet, Command } from "@/lib/types";
+import {
+  fetchTabsFromClient,
+  fetchSnippetsFromClient,
+  fetchCommandsFromClient,
+} from "@/lib/supabaseClient";
 
 export default function StudentPage() {
   const [tabs, setTabs] = useState<Tab[]>([]);
@@ -16,27 +21,47 @@ export default function StudentPage() {
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // 데이터 가져오기 (캐시 원천 무효화: timestamp 쿼리 및 no-store)
+  // 데이터 가져오기: 브라우저 Supabase 직접 조회 1순위 (Network 탭에 supabase.co 요청 발생)
   const fetchData = useCallback(async () => {
     try {
-      const now = Date.now();
-      const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
-        fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
-        fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
-        fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+      // 1. 브라우저 Supabase 클라이언트로 직접 조회 시도
+      const [clientTabs, clientSnippets, clientCommands] = await Promise.all([
+        fetchTabsFromClient(),
+        fetchSnippetsFromClient(),
+        fetchCommandsFromClient(),
       ]);
 
-      if (tabsRes.ok) {
-        const tabsData = await tabsRes.json();
-        setTabs(tabsData);
+      if (clientTabs !== null) {
+        setTabs(clientTabs);
       }
-      if (snippetsRes.ok) {
-        const snippetsData = await snippetsRes.json();
-        setSnippets(snippetsData);
+      if (clientSnippets !== null) {
+        setSnippets(clientSnippets);
       }
-      if (commandsRes.ok) {
-        const commandsData = await commandsRes.json();
-        setCommands(commandsData);
+      if (clientCommands !== null) {
+        setCommands(clientCommands);
+      }
+
+      // 만약 브라우저 Supabase 클라이언트가 환경변수 부재 등으로 null인 경우 서버 API로 fallback
+      if (clientTabs === null || clientSnippets === null || clientCommands === null) {
+        const now = Date.now();
+        const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
+          fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
+          fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
+          fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+        ]);
+
+        if (clientTabs === null && tabsRes.ok) {
+          const tabsData = await tabsRes.json();
+          setTabs(tabsData);
+        }
+        if (clientSnippets === null && snippetsRes.ok) {
+          const snippetsData = await snippetsRes.json();
+          setSnippets(snippetsData);
+        }
+        if (clientCommands === null && commandsRes.ok) {
+          const commandsData = await commandsRes.json();
+          setCommands(commandsData);
+        }
       }
     } catch (err) {
       console.error("데이터 갱신 중 오류:", err);

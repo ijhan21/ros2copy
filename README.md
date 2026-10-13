@@ -54,7 +54,7 @@ create policy "누구나 commands 조회 가능" on commands for select using (t
 | :--- | :--- | :--- |
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase 프로젝트 URL | Supabase 대시보드 Settings > API |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase 익명(Anon) 공개 키 | Supabase 대시보드 Settings > API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase 서비스 롤(Service Role) 키 | 서버 전용, 절대 브라우저 노출 금지 |
+| `SUPABASE_SECRET_KEY` | Supabase 시크릿(Service Role) 키 | 서버 전용, 절대 브라우저 노출 금지 |
 | `BOARD_PASSWORD` | 강사 화면(`/올리기`) 등록 및 관리용 암호 | 강사 본인만 아는 임의 문자열 |
 
 ---
@@ -63,7 +63,7 @@ create policy "누구나 commands 조회 가능" on commands for select using (t
 
 1. GitHub에 `ros2copy` 저장소를 생성하고 푸시합니다.
 2. Vercel 대시보드에서 `Add New...` > `Project`를 누르고 `ros2copy` 저장소를 가져옵니다.
-3. `Environment Variables` 항목에 위의 4개 환경변수(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`, `BOARD_PASSWORD`)를 입력합니다.
+3. `Environment Variables` 항목에 위의 4개 환경변수(`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SECRET_KEY`, `BOARD_PASSWORD`)를 입력합니다.
 4. `Deploy` 버튼을 누르면 배포가 완료됩니다. (총 4번 클릭)
 
 ---

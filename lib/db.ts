@@ -8,14 +8,17 @@ let cachedSupabase: SupabaseClient | null = null;
 
 function getSupabase(): SupabaseClient | null {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
-  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+  const supabaseSecretKey = (
+    process.env.SUPABASE_SECRET_KEY ||
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )?.trim();
 
-  if (!supabaseUrl || !supabaseServiceKey) {
+  if (!supabaseUrl || !supabaseSecretKey) {
     return null;
   }
 
   if (!cachedSupabase) {
-    cachedSupabase = createClient(supabaseUrl, supabaseServiceKey, {
+    cachedSupabase = createClient(supabaseUrl, supabaseSecretKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,

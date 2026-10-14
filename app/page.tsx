@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import Header from "@/components/Header";
 import CodeCard from "@/components/CodeCard";
 import CommandStream from "@/components/CommandStream";
+import CodeModal from "@/components/CodeModal";
 import { Snippet } from "@/lib/types";
 import { useSseStream } from "@/hooks/useSseStream";
 
@@ -41,6 +42,11 @@ export default function StudentPage() {
   const [undoSecondsLeft, setUndoSecondsLeft] = useState(8);
   const undoTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const undoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 크게 보기 모달 상태
+  const [activeModalSnippetId, setActiveModalSnippetId] = useState<number | null>(null);
+  const [lastKnownSnippet, setLastKnownSnippet] = useState<Snippet | null>(null);
+  const isHistoryPushedRef = useRef(false);
 
   // 강사 암호 확인
   useEffect(() => {
@@ -252,6 +258,70 @@ export default function StudentPage() {
       ? snippets
       : snippets.filter((s) => s.tab_id === selectedTabId);
 
+  // 크게 보기 모달 제어
+  const handleOpenModal = useCallback((id: number) => {
+    setActiveModalSnippetId(id);
+    const target = snippets.find((s) => s.id === id);
+    if (target) setLastKnownSnippet(target);
+    if (typeof window !== "undefined") {
+      window.history.pushState({ modal: "code", id }, "", `#code-${id}`);
+      isHistoryPushedRef.current = true;
+    }
+  }, [snippets]);
+
+  const handleCloseModal = useCallback((fromPopState = false) => {
+    setActiveModalSnippetId(null);
+    if (!fromPopState && typeof window !== "undefined") {
+      if (window.history.state?.modal === "code" || isHistoryPushedRef.current) {
+        isHistoryPushedRef.current = false;
+        window.history.back();
+      }
+    }
+  }, []);
+
+  // 브라우저 뒤로 가기 (popstate) 시 모달 닫기
+  useEffect(() => {
+    const onPopState = () => {
+      if (activeModalSnippetId !== null) {
+        isHistoryPushedRef.current = false;
+        handleCloseModal(true);
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [activeModalSnippetId, handleCloseModal]);
+
+  // 모달 내 이전 / 다음 탐색 (현재 고른 탭 기준)
+  const handleNavigateModal = useCallback((newIndex: number) => {
+    if (newIndex >= 0 && newIndex < filteredSnippets.length) {
+      const nextSnippet = filteredSnippets[newIndex];
+      setActiveModalSnippetId(nextSnippet.id);
+      setLastKnownSnippet(nextSnippet);
+      if (typeof window !== "undefined" && isHistoryPushedRef.current) {
+        window.history.replaceState({ modal: "code", id: nextSnippet.id }, "", `#code-${nextSnippet.id}`);
+      }
+    }
+  }, [filteredSnippets]);
+
+  // 실시간 SSE 반영 및 삭제 시 보존 로직
+  const activeModalSnippet = useMemo(() => {
+    if (activeModalSnippetId === null) return null;
+    const found = snippets.find((s) => s.id === activeModalSnippetId);
+    if (found) return found;
+    if (lastKnownSnippet && lastKnownSnippet.id === activeModalSnippetId) {
+      return {
+        ...lastKnownSnippet,
+        deleted_at: lastKnownSnippet.deleted_at || new Date().toISOString(),
+      };
+    }
+    return null;
+  }, [activeModalSnippetId, snippets, lastKnownSnippet]);
+
+  const currentModalIndex = useMemo(() => {
+    if (activeModalSnippetId === null) return -1;
+    return filteredSnippets.findIndex((s) => s.id === activeModalSnippetId);
+  }, [activeModalSnippetId, filteredSnippets]);
+
   // 이 탭 전체 복사
   const handleCopyEntireTab = async () => {
     if (filteredSnippets.length === 0) return;
@@ -386,6 +456,7 @@ export default function StudentPage() {
                     onDelete={handleDeleteSnippet}
                     onTogglePin={handleTogglePinSnippet}
                     onFetchBody={fetchSnippetBody}
+                    onOpenModal={handleOpenModal}
                   />
                 ))}
               </div>
@@ -421,6 +492,17 @@ export default function StudentPage() {
           </button>
         </div>
       )}
+
+      {/* 코드 크게 보기 모달 */}
+      <CodeModal
+        isOpen={activeModalSnippetId !== null}
+        snippet={activeModalSnippet}
+        currentIndex={currentModalIndex >= 0 ? currentModalIndex : 0}
+        totalCount={filteredSnippets.length}
+        onClose={() => handleCloseModal(false)}
+        onNavigate={handleNavigateModal}
+        onFetchBody={fetchSnippetBody}
+      />
     </div>
   );
 }

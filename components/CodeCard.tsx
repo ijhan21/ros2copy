@@ -17,6 +17,7 @@ interface CodeCardProps {
   onDelete?: (id: number) => Promise<boolean>;
   onTogglePin?: (id: number, pinned: boolean) => Promise<boolean>;
   onFetchBody?: (id: number) => Promise<string | null>;
+  onOpenModal?: (id: number) => void;
 }
 
 export default function CodeCard({
@@ -26,6 +27,7 @@ export default function CodeCard({
   onDelete,
   onTogglePin,
   onFetchBody,
+  onOpenModal,
 }: CodeCardProps) {
   const [copied, setCopied] = useState(false);
   const [copiedLineIdx, setCopiedLineIdx] = useState<number | null>(null);
@@ -269,15 +271,37 @@ export default function CodeCard({
                   </>
                 )}
 
+                {onOpenModal && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenModal(snippet.id);
+                    }}
+                    className="min-h-[32px] px-2.5 text-xs font-semibold border border-[#0F766E]/50 dark:border-[#14B8A6]/50 rounded-[8px] bg-[#CCFBF1]/40 dark:bg-[#115E59]/40 text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#0F766E] hover:text-white dark:hover:bg-[#14B8A6] dark:hover:text-[#121214] transition-colors"
+                    title="코드 크게 보기"
+                  >
+                    크게 보기
+                  </button>
+                )}
+
                 <button
-                  onClick={() => setShowLineNumbers(!showLineNumbers)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowLineNumbers(!showLineNumbers);
+                  }}
                   className="min-h-[32px] px-2.5 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46] transition-colors"
                 >
                   {showLineNumbers ? "줄번호 끔" : "줄번호 켬"}
                 </button>
 
                 <button
-                  onClick={handleCopyAll}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleCopyAll();
+                  }}
                   className={`min-h-[32px] px-3.5 text-xs font-semibold rounded-[8px] transition-colors ${
                     copied
                       ? "bg-[#0F766E] text-white"
@@ -289,9 +313,13 @@ export default function CodeCard({
               </div>
             </div>
 
-            {/* 제목 및 경로 */}
-            <div className="mb-3">
-              <h3 className="text-base font-bold text-[#18181B] dark:text-[#F4F4F5] break-words">
+            {/* 제목 및 경로: 누르면 크게 보기 열림 */}
+            <div
+              className={`mb-3 ${onOpenModal ? "cursor-pointer group/title" : ""}`}
+              onClick={() => onOpenModal?.(snippet.id)}
+              title={onOpenModal ? "누르면 크게 보기로 열립니다" : undefined}
+            >
+              <h3 className="text-base font-bold text-[#18181B] dark:text-[#F4F4F5] break-words group-hover/title:text-[#0F766E] dark:group-hover/title:text-[#14B8A6] transition-colors">
                 {snippet.title || "코드 스니펫"}
               </h3>
               {snippet.path && (
@@ -302,9 +330,13 @@ export default function CodeCard({
             </div>
           </div>
 
-          {/* 어두운 코드 상자: 들여쓰기 뭉개짐 방지 (white-space: pre !important) */}
-          <div className="mt-1">
-            <div className="bg-[#1C1C22] text-[#D4D7DD] rounded-[8px] overflow-hidden border border-[#2E2E36]">
+          {/* 어두운 코드 상자: 누르면 크게 보기 열림 */}
+          <div
+            className={`mt-1 ${onOpenModal ? "cursor-pointer" : ""}`}
+            onClick={() => onOpenModal?.(snippet.id)}
+            title={onOpenModal ? "누르면 크게 보기로 열립니다" : undefined}
+          >
+            <div className="bg-[#1C1C22] text-[#D4D7DD] rounded-[8px] overflow-hidden border border-[#2E2E36] hover:border-[#0F766E]/50 transition-colors">
               <div
                 className={`code-container text-xs sm:text-sm font-mono overflow-x-auto p-3.5 leading-6 ${
                   showLineNumbers ? "show-line-numbers" : "hide-line-numbers"
@@ -347,7 +379,11 @@ export default function CodeCard({
                       {/* 터미널 종류일 때 줄마다 복사 단추 */}
                       {snippet.kind === "bash" && rawLine.trim().length > 0 && (
                         <button
-                          onClick={() => handleCopyLine(rawLine, lineIdx)}
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyLine(rawLine, lineIdx);
+                          }}
                           title="이 줄 복사"
                           className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 px-1.5 py-0.5 text-[10px] bg-[#26262E] hover:bg-[#3F3F46] text-[#A1A1AA] hover:text-white rounded border border-[#3F3F46]"
                         >
@@ -363,7 +399,11 @@ export default function CodeCard({
               {isLong && (
                 <div className="border-t border-[#2E2E36] bg-[#26262E]/70 px-3 py-2 text-center">
                   <button
-                    onClick={() => setExpanded(!expanded)}
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setExpanded(!expanded);
+                    }}
                     className="text-xs font-medium text-[#CCFBF1] hover:text-white transition-colors"
                   >
                     {expanded

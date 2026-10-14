@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Snippet, SnippetKind } from "@/lib/types";
 import { formatRelativeTime, isWithinThreeMinutes } from "@/lib/time";
 import {
@@ -16,6 +16,7 @@ interface CodeCardProps {
   onUpdate?: (id: number, data: Partial<Snippet>) => Promise<boolean>;
   onDelete?: (id: number) => Promise<boolean>;
   onTogglePin?: (id: number, pinned: boolean) => Promise<boolean>;
+  onFetchBody?: (id: number) => Promise<string | null>;
 }
 
 export default function CodeCard({
@@ -24,21 +25,32 @@ export default function CodeCard({
   onUpdate,
   onDelete,
   onTogglePin,
+  onFetchBody,
 }: CodeCardProps) {
   const [copied, setCopied] = useState(false);
   const [copiedLineIdx, setCopiedLineIdx] = useState<number | null>(null);
   const [showLineNumbers, setShowLineNumbers] = useState(true);
   const [expanded, setExpanded] = useState(false);
+  const [isLoadingBody, setIsLoadingBody] = useState(false);
 
   // 수정 모드 상태
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(snippet.title || "");
   const [editPath, setEditPath] = useState(snippet.path || "");
   const [editKind, setEditKind] = useState<SnippetKind>(snippet.kind);
-  const [editBody, setEditBody] = useState(snippet.body);
+  const [editBody, setEditBody] = useState(snippet.body || "");
   const [isSaving, setIsSaving] = useState(false);
 
-  const lines = snippet.body.split("\n");
+  // 256KB 초과 분리된 본문 자동 요청
+  useEffect(() => {
+    if (snippet.has_body === false && !snippet.body && onFetchBody && !isLoadingBody) {
+      setIsLoadingBody(true);
+      onFetchBody(snippet.id).finally(() => setIsLoadingBody(false));
+    }
+  }, [snippet.has_body, snippet.body, snippet.id, onFetchBody, isLoadingBody]);
+
+  const bodyContent = snippet.body || "";
+  const lines = bodyContent ? bodyContent.split("\n") : [];
   const isLong = lines.length > 20;
   const visibleLines = isLong && !expanded ? lines.slice(0, 20) : lines;
   const hiddenCount = lines.length - 20;
@@ -298,7 +310,12 @@ export default function CodeCard({
                   showLineNumbers ? "show-line-numbers" : "hide-line-numbers"
                 }`}
               >
-                {tokenizedLines.map((lineTokens, lineIdx) => {
+                {isLoadingBody ? (
+                  <div className="py-6 text-center text-xs text-[#9CA3AF] animate-pulse">
+                    본문을 따로 가져오는 중입니다...
+                  </div>
+                ) : (
+                  tokenizedLines.map((lineTokens, lineIdx) => {
                   const rawLine = visibleLines[lineIdx];
                   return (
                     <div
@@ -339,7 +356,7 @@ export default function CodeCard({
                       )}
                     </div>
                   );
-                })}
+                }))}
               </div>
 
               {/* 20줄 넘칠 때 펼치기/접기 */}

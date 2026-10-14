@@ -15,6 +15,7 @@ export interface Snippet {
   path: string | null;
   kind: SnippetKind;
   body: string;
+  has_body?: boolean;
   pinned: boolean;
   deleted_at: string | null;
   created_at: string;

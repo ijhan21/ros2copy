@@ -28,6 +28,17 @@ function getSupabase(): SupabaseClient | null {
   return cachedSupabase;
 }
 
+// 강사 액션 시 SSE 브로드캐스트 즉시 트리거
+function notifyChange(): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { notifyMutationImmediate } = require("./serverState");
+    notifyMutationImmediate();
+  } catch {
+    // 빌드/초기화 시 무시
+  }
+}
+
 // 로컬/인메모리 Fallback 스토리지 (Supabase 미설정 시 안전 모드)
 interface LocalData {
   tabs: Tab[];
@@ -133,6 +144,7 @@ export async function createTab(name: string, sort?: number): Promise<Tab> {
       console.error("Supabase createTab error:", error);
       throw error;
     }
+    notifyChange();
     return data;
   }
 
@@ -150,6 +162,7 @@ export async function createTab(name: string, sort?: number): Promise<Tab> {
   };
   local.tabs.push(newTab);
   saveLocalData(local);
+  notifyChange();
   return newTab;
 }
 
@@ -175,6 +188,7 @@ export async function updateTab(
       console.error("Supabase updateTab error:", error);
       throw error;
     }
+    notifyChange();
     return updated;
   }
 
@@ -185,6 +199,7 @@ export async function updateTab(
   if (data.sort !== undefined) target.sort = data.sort;
   if (data.deleted_at !== undefined) target.deleted_at = data.deleted_at;
   saveLocalData(local);
+  notifyChange();
   return target;
 }
 
@@ -207,6 +222,7 @@ export async function deleteTab(id: number, permanent = false): Promise<void> {
         throw error;
       }
     }
+    notifyChange();
     return;
   }
 
@@ -219,8 +235,8 @@ export async function deleteTab(id: number, permanent = false): Promise<void> {
       target.deleted_at = new Date().toISOString();
     }
   }
-  // 주의: 외래키 cascade를 제거하고 soft delete 하므로 코드는 보존합니다.
   saveLocalData(local);
+  notifyChange();
 }
 
 // ---------------- Snippets ----------------
@@ -279,6 +295,32 @@ export async function getSnippets(tabId?: number): Promise<Snippet[]> {
   });
 }
 
+export async function getSnippetById(id: number): Promise<Snippet | null> {
+  const supabase = getSupabase();
+  if (supabase) {
+    const [snipRes, tabsRes] = await Promise.all([
+      supabase.from("snippets").select("*").eq("id", id).is("deleted_at", null).single(),
+      supabase.from("tabs").select("id, name").is("deleted_at", null),
+    ]);
+
+    if (snipRes.error || !snipRes.data) return null;
+    const tabMap = new Map((tabsRes.data || []).map((t) => [t.id, t.name]));
+    return {
+      ...snipRes.data,
+      tabs: snipRes.data.tab_id ? { name: tabMap.get(snipRes.data.tab_id) || "" } : null,
+    };
+  }
+
+  const local = getLocalData();
+  const found = local.snippets.find((s) => s.id === id && !s.deleted_at);
+  if (!found) return null;
+  const tab = local.tabs.find((t) => t.id === found.tab_id && !t.deleted_at);
+  return {
+    ...found,
+    tabs: tab ? { name: tab.name } : null,
+  };
+}
+
 export async function createSnippet(input: {
   tab_id?: number | null;
   title?: string | null;
@@ -321,6 +363,7 @@ export async function createSnippet(input: {
       tabName = tabData?.name || "";
     }
 
+    notifyChange();
     return {
       ...data,
       tabs: tabName ? { name: tabName } : null,
@@ -343,6 +386,7 @@ export async function createSnippet(input: {
   };
   local.snippets.unshift(newSnippet);
   saveLocalData(local);
+  notifyChange();
   return newSnippet;
 }
 
@@ -371,6 +415,7 @@ export async function updateSnippet(
       console.error("Supabase updateSnippet error:", error);
       throw error;
     }
+    notifyChange();
     return updated;
   }
 
@@ -386,6 +431,7 @@ export async function updateSnippet(
   if (data.deleted_at !== undefined) target.deleted_at = data.deleted_at;
 
   saveLocalData(local);
+  notifyChange();
   return target;
 }
 
@@ -402,6 +448,7 @@ export async function deleteSnippet(id: number, permanent = false): Promise<void
         .eq("id", id);
       if (error) throw error;
     }
+    notifyChange();
     return;
   }
 
@@ -415,6 +462,7 @@ export async function deleteSnippet(id: number, permanent = false): Promise<void
     }
   }
   saveLocalData(local);
+  notifyChange();
 }
 
 // ---------------- Commands ----------------
@@ -469,6 +517,7 @@ export async function createCommand(input: {
       console.error("Supabase createCommand error:", error);
       throw error;
     }
+    notifyChange();
     return data;
   }
 
@@ -483,6 +532,7 @@ export async function createCommand(input: {
   };
   local.commands.push(newCommand);
   saveLocalData(local);
+  notifyChange();
   return newCommand;
 }
 
@@ -506,6 +556,7 @@ export async function updateCommand(
       .single();
 
     if (error) throw error;
+    notifyChange();
     return updated;
   }
 
@@ -519,6 +570,7 @@ export async function updateCommand(
   if (data.deleted_at !== undefined) target.deleted_at = data.deleted_at;
 
   saveLocalData(local);
+  notifyChange();
   return target;
 }
 
@@ -535,6 +587,7 @@ export async function deleteCommand(id: number, permanent = false): Promise<void
         .eq("id", id);
       if (error) throw error;
     }
+    notifyChange();
     return;
   }
 
@@ -548,6 +601,7 @@ export async function deleteCommand(id: number, permanent = false): Promise<void
     }
   }
   saveLocalData(local);
+  notifyChange();
 }
 
 // ---------------- Health / Ping ----------------

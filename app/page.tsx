@@ -1,15 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useRef } from "react";
 import Header from "@/components/Header";
 import CodeCard from "@/components/CodeCard";
 import CommandStream from "@/components/CommandStream";
-import { Tab, Snippet, Command } from "@/lib/types";
-import {
-  fetchTabsFromClient,
-  fetchSnippetsFromClient,
-  fetchCommandsFromClient,
-} from "@/lib/supabaseClient";
+import { Snippet } from "@/lib/types";
+import { useSseStream } from "@/hooks/useSseStream";
 
 interface UndoItem {
   type: "snippet" | "command";
@@ -19,14 +15,22 @@ interface UndoItem {
 }
 
 export default function StudentPage() {
-  const [tabs, setTabs] = useState<Tab[]>([]);
+  const {
+    tabs,
+    snippets,
+    commands,
+    setSnippets,
+    setCommands,
+    connectionMode,
+    isRefreshing,
+    refreshManually,
+    fetchSnippetBody,
+  } = useSseStream();
+
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null); // null = 전체
-  const [snippets, setSnippets] = useState<Snippet[]>([]);
-  const [commands, setCommands] = useState<Command[]>([]);
   const [tabCopied, setTabCopied] = useState(false);
   const [mobileView, setMobileView] = useState<"code" | "commands">("code");
-  const [loading, setLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
+  const loading = tabs.length === 0 && snippets.length === 0 && commands.length === 0;
 
   // 강사 권한 상태
   const [hasTeacherPassword, setHasTeacherPassword] = useState(false);
@@ -47,59 +51,6 @@ export default function StudentPage() {
     }
   }, []);
 
-  // 데이터 가져오기: 브라우저 Supabase 직접 조회 1순위
-  const fetchData = useCallback(async () => {
-    try {
-      const [clientTabs, clientSnippets, clientCommands] = await Promise.all([
-        fetchTabsFromClient(),
-        fetchSnippetsFromClient(),
-        fetchCommandsFromClient(),
-      ]);
-
-      if (clientTabs !== null) setTabs(clientTabs);
-      if (clientSnippets !== null) setSnippets(clientSnippets);
-      if (clientCommands !== null) setCommands(clientCommands);
-
-      if (clientTabs === null || clientSnippets === null || clientCommands === null) {
-        const now = Date.now();
-        const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
-          fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
-          fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
-          fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
-        ]);
-
-        if (clientTabs === null && tabsRes.ok) {
-          const tabsData = await tabsRes.json();
-          setTabs(tabsData);
-        }
-        if (clientSnippets === null && snippetsRes.ok) {
-          const snippetsData = await snippetsRes.json();
-          setSnippets(snippetsData);
-        }
-        if (clientCommands === null && commandsRes.ok) {
-          const commandsData = await commandsRes.json();
-          setCommands(commandsData);
-        }
-      }
-    } catch (err) {
-      console.error("데이터 갱신 중 오류:", err);
-    } finally {
-      setLoading(false);
-      setIsRefreshing(false);
-    }
-  }, []);
-
-  const handleManualRefresh = () => {
-    setIsRefreshing(true);
-    fetchData();
-  };
-
-  useEffect(() => {
-    fetchData();
-    const interval = setInterval(fetchData, 10000);
-    return () => clearInterval(interval);
-  }, [fetchData]);
-
   // 카드 수정 (고치기)
   const handleUpdateSnippet = async (id: number, data: Partial<Snippet>): Promise<boolean> => {
     try {
@@ -113,7 +64,7 @@ export default function StudentPage() {
       });
 
       if (res.ok) {
-        await fetchData();
+        await refreshManually();
         return true;
       } else {
         const err = await res.json();
@@ -262,7 +213,7 @@ export default function StudentPage() {
       });
 
       if (res.ok) {
-        await fetchData();
+        await refreshManually();
       } else {
         alert("되돌리기 실패");
       }
@@ -285,7 +236,7 @@ export default function StudentPage() {
       });
 
       if (res.ok) {
-        await fetchData();
+        await refreshManually();
         return true;
       }
       return false;
@@ -322,7 +273,7 @@ export default function StudentPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5]">
-      <Header />
+      <Header connectionMode={connectionMode} />
 
       {/* 모바일 뷰 전환 단추 */}
       <div className="md:hidden px-4 pt-3 pb-1 border-b border-[#E4E4E7] dark:border-[#2E2E36] bg-[#FFFFFF] dark:bg-[#1A1A1E]">
@@ -392,7 +343,7 @@ export default function StudentPage() {
               {/* 우측 단추들 */}
               <div className="flex items-center gap-2 pb-2 sm:pb-0 shrink-0">
                 <button
-                  onClick={handleManualRefresh}
+                  onClick={refreshManually}
                   disabled={isRefreshing}
                   className="min-h-[36px] px-2.5 text-xs font-medium rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#E4E4E7] dark:border-[#2E2E36] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#F7F7F8] dark:hover:bg-[#26262E] transition-colors"
                 >
@@ -434,6 +385,7 @@ export default function StudentPage() {
                     onUpdate={handleUpdateSnippet}
                     onDelete={handleDeleteSnippet}
                     onTogglePin={handleTogglePinSnippet}
+                    onFetchBody={fetchSnippetBody}
                   />
                 ))}
               </div>

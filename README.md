@@ -80,6 +80,17 @@ create policy "누구나 commands 조회 가능" on commands for select using (t
 
 ---
 
-## 5. Supabase 멈춤 방지 (Vercel Cron)
+## 5. Supabase 멈춤 방지 (Vercel Cron & Server Ping)
 
-`vercel.json`에 정의된 매일 새벽 3시 `/api/ping` 예약 작업은 Supabase 무료 플랜의 7일 미사용 자동 정지(Pause)를 막는 설정입니다. 이 설정을 지우면 일주일 뒤 사이트가 죽습니다.
+`vercel.json`에 정의된 매일 새벽 3시 `/api/ping` 예약 작업 및 서버 내부 일 1회 핑은 Supabase 무료 플랜의 7일 미사용 자동 정지(Pause)를 막는 설정입니다. 이 설정을 지우면 일주일 뒤 사이트가 죽습니다.
+
+---
+
+## 6. hanslab 서버 운영 및 SSE 스트리밍
+
+- 주소: `https://rokey.hanslabai.p-e.kr` (Nginx Proxy Manager 앞단)
+- 서버 백엔드가 Supabase를 메모리에 캐시하여 수강생 동시 접속 시 Supabase 트래픽 고갈을 방지합니다.
+- 수강생 클라이언트는 `GET /api/stream` SSE로 실시간 갱신을 수신합니다.
+- 15초마다 `: keepalive` 주석을 전송하여 연결을 유지하며, Nginx의 `X-Accel-Buffering: no` 및 버퍼링 비활성화로 지연 없이 전달됩니다.
+- 한 탭의 본문 합이 256KB를 초과할 경우 본문을 분리하여 `GET /api/snippets/:id`로 온디맨드 로드합니다.
+- 연결 끊김 시 1초, 2초, 4초... 최대 30초 지수 백오프로 재연결하며, 3회 연속 실패 시 30초 폴링으로 자동 전환됩니다.

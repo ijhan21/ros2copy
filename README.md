@@ -94,3 +94,12 @@ create policy "누구나 commands 조회 가능" on commands for select using (t
 - 15초마다 `: keepalive` 주석을 전송하여 연결을 유지하며, Nginx의 `X-Accel-Buffering: no` 및 버퍼링 비활성화로 지연 없이 전달됩니다.
 - 한 탭의 본문 합이 256KB를 초과할 경우 본문을 분리하여 `GET /api/snippets/:id`로 온디맨드 로드합니다.
 - 연결 끊김 시 1초, 2초, 4초... 최대 30초 지수 백오프로 재연결하며, 3회 연속 실패 시 30초 폴링으로 자동 전환됩니다.
+
+### Docker 컨테이너 운영
+
+- 컨테이너 빌드 및 실행: `docker compose up -d --build`
+- 로그 확인: `docker compose logs -f`
+- 상태 및 헬스체크 확인: `docker compose ps`
+- 컨테이너 중지: `docker compose down`
+- 재부팅 시 자동 시작: `restart: unless-stopped` 설정 및 호스트 `docker.service`로 자동 시작 보장
+

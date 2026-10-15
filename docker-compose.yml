@@ -1,0 +1,37 @@
+name: ros2copy
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?.env 에 NEXT_PUBLIC_SUPABASE_URL 을 넣으세요}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?.env 에 NEXT_PUBLIC_SUPABASE_ANON_KEY 를 넣으세요}
+    image: ros2copy:latest
+    container_name: ros2copy_web
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      - NODE_ENV=production
+      - PORT=3005
+      - HOSTNAME=0.0.0.0
+      - TZ=Asia/Seoul
+    ports:
+      - "3005:3005"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3005/api/ping').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    networks:
+      - default
+      - npm
+
+networks:
+  default:
+  npm:
+    external: true
+    name: ${NPM_NETWORK_NAME:-npm_network}

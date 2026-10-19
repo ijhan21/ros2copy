@@ -423,30 +423,30 @@ export default function StudentPage() {
                 {filteredSnippets.length > 0 && (
                   <button
                     onClick={handleCopyEntireTab}
-                    className="min-h-[36px] px-3 text-xs font-semibold rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#0F766E] text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#CCFBF1]/30 dark:hover:bg-[#115E59]/30 transition-colors"
+                    className="min-h-[36px] px-3.5 text-xs font-semibold rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] border border-[#0F766E] text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#CCFBF1]/30 dark:hover:bg-[#115E59]/30 transition-colors shadow-xs"
                   >
-                    {tabCopied ? "전체 복사함" : "이 탭 전체 복사"}
+                    {tabCopied ? "복사 완료!" : "이 탭 코드 한 번에 복사"}
                   </button>
                 )}
               </div>
             </div>
 
-            {/* 코드 카드 2열 격자 */}
+            {/* 코드 카드 2열 격자 (items-start로 개별 높이 유지, 공백 문제 원천 차단) */}
             {loading ? (
-              <div className="p-12 text-center text-xs text-[#52525B] dark:text-[#D1D5DB]">
-                코드를 불러오고 있습니다...
+              <div className="p-16 text-center text-xs text-[#52525B] dark:text-[#D1D5DB] animate-pulse">
+                실습 코드를 불러오는 중입니다...
               </div>
             ) : filteredSnippets.length === 0 ? (
-              <div className="p-16 text-center border border-dashed border-[#E4E4E7] dark:border-[#2E2E36] rounded-[13px] bg-[#FFFFFF] dark:bg-[#1A1A1E]">
-                <p className="text-sm font-medium text-[#52525B] dark:text-[#D1D5DB]">
-                  등록된 코드가 없습니다.
+              <div className="p-16 text-center border border-dashed border-[#E4E4E7] dark:border-[#2E2E36] rounded-[16px] bg-[#FFFFFF] dark:bg-[#1A1A1E] shadow-xs">
+                <p className="text-sm font-semibold text-[#52525B] dark:text-[#D1D5DB]">
+                  아직 등록된 실습 코드가 없어요.
                 </p>
-                <p className="text-xs text-[#71717A] dark:text-[#9CA3AF] mt-1">
-                  올라온 코드가 있으면 여기에 바로 나타납니다.
+                <p className="text-xs text-[#71717A] dark:text-[#9CA3AF] mt-1.5">
+                  강사님이 코드를 올리면 여기에 바로 나타납니다.
                 </p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
                 {filteredSnippets.map((snippet) => (
                   <CodeCard
                     key={snippet.id}
@@ -482,7 +482,7 @@ export default function StudentPage() {
       {undoItem && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-[10px] bg-[#18181B] dark:bg-[#26262E] text-white border border-[#3F3F46] shadow-2xl animate-fade-in">
           <span className="text-xs font-medium">
-            지웠습니다 ({undoSecondsLeft}초)
+            삭제되었습니다 ({undoSecondsLeft}초)
           </span>
           <button
             onClick={handleUndo}

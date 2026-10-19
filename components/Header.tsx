@@ -20,7 +20,7 @@ export default function Header({ isTeacher = false, connectionMode = "connected"
             ROS2 코드 보드
           </Link>
           <span className="text-xs text-[#52525B] dark:text-[#9CA3AF]">
-            수업에서 쓴 코드와 명령을 모아 둡니다. 눌러서 복사해 가십시오.
+            수업 실습 코드와 터미널 명령어를 모아두는 곳입니다. 클릭해서 편하게 복사해 가세요.
           </span>
         </div>
 
@@ -42,7 +42,7 @@ export default function Header({ isTeacher = false, connectionMode = "connected"
               {connectionMode === "polling" && (
                 <>
                   <span className="w-2 h-2 rounded-full bg-[#F97316]" />
-                  <span>30초마다 가져옵니다 (예비 연결)</span>
+                  <span>30초 주기로 새로고침 중 (예비 연결)</span>
                 </>
               )}
             </div>
@@ -55,14 +55,14 @@ export default function Header({ isTeacher = false, connectionMode = "connected"
               href="/"
               className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#FFFFFF] dark:bg-[#1A1A1E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#F4F4F5] dark:hover:bg-[#26262E] transition-colors"
             >
-              학생 화면으로
+              학생 화면
             </Link>
           ) : (
             <Link
               href="/올리기"
               className="min-h-[36px] px-3 inline-flex items-center text-xs font-medium border border-[#0F766E] text-[#0F766E] dark:text-[#14B8A6] rounded-[8px] bg-[#CCFBF1]/30 dark:bg-[#115E59]/30 hover:bg-[#CCFBF1] dark:hover:bg-[#115E59] transition-colors"
             >
-              강사 올리기
+              강사 페이지
             </Link>
           )}
         </div>

@@ -216,7 +216,7 @@ export default function CodeModal({
               onClick={() => setShowLineNumbers(!showLineNumbers)}
               className="min-h-[36px] px-3 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46] transition-colors"
             >
-              {showLineNumbers ? "줄번호 끔" : "줄번호 켬"}
+              {showLineNumbers ? "줄번호 끄기" : "줄번호 켜기"}
             </button>
 
             <button
@@ -228,7 +228,7 @@ export default function CodeModal({
                   : "bg-[#0F766E] text-white hover:bg-[#115E59]"
               }`}
             >
-              {copied ? "복사함" : "복사"}
+              {copied ? "복사 완료!" : "전체 복사"}
             </button>
 
             <button
@@ -245,8 +245,8 @@ export default function CodeModal({
         {/* 삭제 알림 띠 (실시간 삭제 시 창 유지 및 안내) */}
         {snippet.deleted_at && (
           <div className="shrink-0 px-5 py-2.5 bg-red-600/15 border-b border-red-500/30 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-between">
-            <span>이 코드는 강사에 의해 지워졌습니다.</span>
-            <span className="text-[11px] opacity-80">창은 유지됩니다</span>
+            <span>이 코드는 삭제되었습니다.</span>
+            <span className="text-[11px] opacity-80">창을 닫으면 목록으로 돌아갑니다</span>
           </div>
         )}
 
@@ -257,7 +257,7 @@ export default function CodeModal({
         >
           {isLoadingBody ? (
             <div className="py-20 text-center text-sm text-[#9CA3AF] animate-pulse">
-              본문을 불러오고 있습니다...
+              코드 내용을 불러오는 중입니다...
             </div>
           ) : (
             <div className="font-mono text-[14.5px] leading-[23px] sm:text-[15px] sm:leading-[24px]">

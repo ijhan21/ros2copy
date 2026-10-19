@@ -139,7 +139,7 @@ export default function TeacherPage() {
     setAuthError("");
     const inputPwd = tempPassword.trim();
     if (!inputPwd) {
-      setAuthError("암호를 입력하십시오.");
+      setAuthError("암호를 입력해 주세요.");
       return;
     }
 
@@ -225,10 +225,10 @@ export default function TeacherPage() {
     let confirmed = false;
     if (snippetCount > 0) {
       confirmed = window.confirm(
-        `이 탭에 코드 ${snippetCount}개가 있습니다. 함께 감춥니다. 지우시겠습니까?`
+        `이 탭에 코드 ${snippetCount}개가 포함되어 있습니다. 함께 숨겨집니다. 삭제할까요?`
       );
     } else {
-      confirmed = window.confirm(`'${tab.name}' 탭을 지우시겠습니까?`);
+      confirmed = window.confirm(`'${tab.name}' 탭을 삭제할까요?`);
     }
     if (!confirmed) return;
 

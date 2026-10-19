@@ -105,10 +105,10 @@ export default function CodeCard({
     }
   };
 
-  // 삭제 실행 (한 번 되묻기)
+  // 삭제 실행 (되묻기)
   const handleDelete = async () => {
     if (!onDelete) return;
-    const confirmed = window.confirm("이 코드를 지우시겠습니까? (8초 안에 되돌릴 수 있습니다)");
+    const confirmed = window.confirm("이 코드를 삭제할까요? (8초 동안 되돌릴 수 있어요)");
     if (!confirmed) return;
     await onDelete(snippet.id);
   };
@@ -117,9 +117,9 @@ export default function CodeCard({
 
   return (
     <div
-      className={`rounded-[13px] bg-[#FFFFFF] dark:bg-[#1A1A1E] p-4 flex flex-col justify-between transition-shadow duration-200 ${
+      className={`rounded-[16px] bg-[#FFFFFF] dark:bg-[#1A1A1E] p-4 flex flex-col justify-start gap-3 transition-all duration-200 shadow-xs hover:shadow-md ${
         isRecent
-          ? "border-2 border-[#0F766E] shadow-[0_0_15px_rgba(15,118,110,0.35)]"
+          ? "border-2 border-[#0F766E] shadow-[0_0_15px_rgba(15,118,110,0.25)]"
           : snippet.pinned
           ? "border-2 border-[#0F766E]/60 dark:border-[#14B8A6]/60"
           : "border border-[#E4E4E7] dark:border-[#2E2E36]"
@@ -130,18 +130,18 @@ export default function CodeCard({
         <div className="flex flex-col gap-3">
           <div className="flex items-center justify-between border-b border-[#E4E4E7] dark:border-[#2E2E36] pb-2">
             <span className="text-xs font-bold text-[#18181B] dark:text-[#F4F4F5]">
-              코드 고치기
+              코드 내용 수정
             </span>
             <button
               type="button"
               onClick={() => setEditKind(getNextSnippetKind(editKind))}
-              className="px-2 py-0.5 text-xs font-semibold rounded-[6px]"
+              className="px-2.5 py-1 text-xs font-semibold rounded-[6px]"
               style={{
                 backgroundColor: getKindBadgeInfo(editKind).bg,
                 color: getKindBadgeInfo(editKind).text,
               }}
             >
-              {getKindBadgeInfo(editKind).label} (누르면 변경)
+              {getKindBadgeInfo(editKind).label} (클릭 시 변경)
             </button>
           </div>
 
@@ -159,7 +159,7 @@ export default function CodeCard({
             </div>
             <div>
               <label className="block text-[11px] text-[#71717A] dark:text-[#9CA3AF] mb-0.5">
-                경로
+                파일 경로
               </label>
               <input
                 type="text"
@@ -172,7 +172,7 @@ export default function CodeCard({
 
           <div>
             <label className="block text-[11px] text-[#71717A] dark:text-[#9CA3AF] mb-0.5">
-              코드 내용
+              코드 본문
             </label>
             <textarea
               rows={8}
@@ -201,142 +201,140 @@ export default function CodeCard({
           </div>
         </div>
       ) : (
-        /* 기본 카드 뷰 */
+        /* 기본 카드 뷰: 제목 밑 공백 없이 위에서부터 자연스럽게 배치 */
         <>
-          <div>
-            {/* 뱃지 및 제어 단추 줄 */}
-            <div className="flex items-center justify-between gap-2 flex-wrap mb-2.5">
-              <div className="flex items-center gap-2 flex-wrap">
-                {snippet.pinned && (
-                  <span className="px-2 py-0.5 text-xs font-bold rounded-[6px] bg-[#0F766E] text-white">
-                    고정됨
-                  </span>
-                )}
-                {isRecent && (
-                  <span className="px-2 py-0.5 text-xs font-semibold rounded-[6px] bg-[#CCFBF1] text-[#0F766E] border border-[#0F766E]/20">
-                    방금 올라옴
-                  </span>
-                )}
-                <span
-                  className="px-2 py-0.5 text-xs font-medium rounded-[6px]"
-                  style={{ backgroundColor: badgeInfo.bg, color: badgeInfo.text }}
-                >
-                  {badgeInfo.label}
+          {/* 1. 뱃지 및 제어 단추 줄 */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {snippet.pinned && (
+                <span className="px-2 py-0.5 text-xs font-bold rounded-[6px] bg-[#0F766E] text-white">
+                  고정됨
                 </span>
-                <span className="text-xs text-[#71717A] dark:text-[#9CA3AF]">
-                  {snippet.tabs?.name ? `${snippet.tabs.name} · ` : ""}
-                  {formatRelativeTime(snippet.created_at)}
+              )}
+              {isRecent && (
+                <span className="px-2 py-0.5 text-xs font-semibold rounded-[6px] bg-[#CCFBF1] text-[#0F766E] border border-[#0F766E]/20">
+                  방금 올라옴
                 </span>
-              </div>
-
-              {/* 강사 전용 컨트롤 (고치기 / 지우기 / 핀) & 학생 공통 (줄번호 / 복사) */}
-              <div className="flex items-center gap-1.5 flex-wrap">
-                {isTeacher && (
-                  <>
-                    {onTogglePin && (
-                      <button
-                        onClick={() => onTogglePin(snippet.id, !snippet.pinned)}
-                        title={snippet.pinned ? "고정 해제" : "맨 위로 고정"}
-                        className={`min-h-[32px] px-2 text-xs font-medium rounded-[6px] border ${
-                          snippet.pinned
-                            ? "bg-[#0F766E] text-white border-[#0F766E]"
-                            : "border-[#E4E4E7] dark:border-[#2E2E36] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB]"
-                        }`}
-                      >
-                        {snippet.pinned ? "핀 해제" : "핀"}
-                      </button>
-                    )}
-                    {onUpdate && (
-                      <button
-                        onClick={() => {
-                          setEditTitle(snippet.title || "");
-                          setEditPath(snippet.path || "");
-                          setEditKind(snippet.kind);
-                          setEditBody(snippet.body);
-                          setIsEditing(true);
-                        }}
-                        className="min-h-[32px] px-2 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[6px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46]"
-                      >
-                        고치기
-                      </button>
-                    )}
-                    {onDelete && (
-                      <button
-                        onClick={handleDelete}
-                        className="min-h-[32px] px-2 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[6px] bg-[#F7F7F8] dark:bg-[#26262E] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
-                      >
-                        지우기
-                      </button>
-                    )}
-                  </>
-                )}
-
-                {onOpenModal && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenModal(snippet.id);
-                    }}
-                    className="min-h-[32px] px-2.5 text-xs font-semibold border border-[#0F766E]/50 dark:border-[#14B8A6]/50 rounded-[8px] bg-[#CCFBF1]/40 dark:bg-[#115E59]/40 text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#0F766E] hover:text-white dark:hover:bg-[#14B8A6] dark:hover:text-[#121214] transition-colors"
-                    title="코드 크게 보기"
-                  >
-                    크게 보기
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowLineNumbers(!showLineNumbers);
-                  }}
-                  className="min-h-[32px] px-2.5 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46] transition-colors"
-                >
-                  {showLineNumbers ? "줄번호 끔" : "줄번호 켬"}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopyAll();
-                  }}
-                  className={`min-h-[32px] px-3.5 text-xs font-semibold rounded-[8px] transition-colors ${
-                    copied
-                      ? "bg-[#0F766E] text-white"
-                      : "bg-[#0F766E] text-white hover:bg-[#115E59]"
-                  }`}
-                >
-                  {copied ? "복사함" : "복사"}
-                </button>
-              </div>
+              )}
+              <span
+                className="px-2 py-0.5 text-xs font-semibold rounded-[6px]"
+                style={{ backgroundColor: badgeInfo.bg, color: badgeInfo.text }}
+              >
+                {badgeInfo.label}
+              </span>
+              <span className="text-xs text-[#71717A] dark:text-[#9CA3AF]">
+                {snippet.tabs?.name ? `${snippet.tabs.name} · ` : ""}
+                {formatRelativeTime(snippet.created_at)}
+              </span>
             </div>
 
-            {/* 제목 및 경로: 누르면 크게 보기 열림 */}
-            <div
-              className={`mb-3 ${onOpenModal ? "cursor-pointer group/title" : ""}`}
-              onClick={() => onOpenModal?.(snippet.id)}
-              title={onOpenModal ? "누르면 크게 보기로 열립니다" : undefined}
-            >
-              <h3 className="text-base font-bold text-[#18181B] dark:text-[#F4F4F5] break-words group-hover/title:text-[#0F766E] dark:group-hover/title:text-[#14B8A6] transition-colors">
-                {snippet.title || "코드 스니펫"}
-              </h3>
-              {snippet.path && (
-                <div className="text-xs font-mono text-[#52525B] dark:text-[#9CA3AF] break-all mt-0.5">
-                  {snippet.path}
-                </div>
+            {/* 강사 컨트롤 및 학생 단추 */}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {isTeacher && (
+                <>
+                  {onTogglePin && (
+                    <button
+                      onClick={() => onTogglePin(snippet.id, !snippet.pinned)}
+                      title={snippet.pinned ? "고정 해제" : "상단 고정"}
+                      className={`min-h-[30px] px-2 text-xs font-medium rounded-[6px] border ${
+                        snippet.pinned
+                          ? "bg-[#0F766E] text-white border-[#0F766E]"
+                          : "border-[#E4E4E7] dark:border-[#2E2E36] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB]"
+                      }`}
+                    >
+                      {snippet.pinned ? "고정 해제" : "상단 고정"}
+                    </button>
+                  )}
+                  {onUpdate && (
+                    <button
+                      onClick={() => {
+                        setEditTitle(snippet.title || "");
+                        setEditPath(snippet.path || "");
+                        setEditKind(snippet.kind);
+                        setEditBody(snippet.body);
+                        setIsEditing(true);
+                      }}
+                      className="min-h-[30px] px-2 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[6px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46]"
+                    >
+                      수정
+                    </button>
+                  )}
+                  {onDelete && (
+                    <button
+                      onClick={handleDelete}
+                      className="min-h-[30px] px-2 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[6px] bg-[#F7F7F8] dark:bg-[#26262E] text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30"
+                    >
+                      삭제
+                    </button>
+                  )}
+                </>
               )}
+
+              {onOpenModal && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenModal(snippet.id);
+                  }}
+                  className="min-h-[30px] px-2.5 text-xs font-semibold border border-[#0F766E]/50 dark:border-[#14B8A6]/50 rounded-[8px] bg-[#CCFBF1]/40 dark:bg-[#115E59]/40 text-[#0F766E] dark:text-[#14B8A6] hover:bg-[#0F766E] hover:text-white dark:hover:bg-[#14B8A6] dark:hover:text-[#121214] transition-colors"
+                  title="클릭하면 전체 화면으로 크게 볼 수 있어요"
+                >
+                  크게 보기
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowLineNumbers(!showLineNumbers);
+                }}
+                className="min-h-[30px] px-2.5 text-xs font-medium border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] bg-[#F7F7F8] dark:bg-[#26262E] text-[#52525B] dark:text-[#D1D5DB] hover:bg-[#E4E4E7] dark:hover:bg-[#3F3F46] transition-colors"
+              >
+                {showLineNumbers ? "줄번호 끄기" : "줄번호 켜기"}
+              </button>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCopyAll();
+                }}
+                className={`min-h-[30px] px-3 text-xs font-semibold rounded-[8px] transition-colors ${
+                  copied
+                    ? "bg-[#0F766E] text-white"
+                    : "bg-[#0F766E] text-white hover:bg-[#115E59]"
+                }`}
+              >
+                {copied ? "복사됨!" : "코드 복사"}
+              </button>
             </div>
           </div>
 
-          {/* 어두운 코드 상자: 누르면 크게 보기 열림 */}
+          {/* 2. 제목 및 파일 경로 (제목과 코드 상자가 바로 연결됨) */}
           <div
-            className={`mt-1 ${onOpenModal ? "cursor-pointer" : ""}`}
+            className={`-mt-0.5 ${onOpenModal ? "cursor-pointer group/title" : ""}`}
             onClick={() => onOpenModal?.(snippet.id)}
-            title={onOpenModal ? "누르면 크게 보기로 열립니다" : undefined}
+            title={onOpenModal ? "클릭하면 전체 화면으로 크게 볼 수 있어요" : undefined}
           >
-            <div className="bg-[#1C1C22] text-[#D4D7DD] rounded-[8px] overflow-hidden border border-[#2E2E36] hover:border-[#0F766E]/50 transition-colors">
+            <h3 className="text-base font-bold text-[#18181B] dark:text-[#F4F4F5] break-words group-hover/title:text-[#0F766E] dark:group-hover/title:text-[#14B8A6] transition-colors leading-snug">
+              {snippet.title || "코드 스니펫"}
+            </h3>
+            {snippet.path && (
+              <div className="text-xs font-mono text-[#52525B] dark:text-[#9CA3AF] break-all mt-1 inline-flex items-center px-2 py-0.5 rounded bg-[#F4F4F5] dark:bg-[#26262E] border border-[#E4E4E7] dark:border-[#2E2E36]">
+                {snippet.path}
+              </div>
+            )}
+          </div>
+
+          {/* 3. 어두운 코드 상자: 제목 바로 아래에 자연스럽게 배치 */}
+          <div
+            className={`w-full ${onOpenModal ? "cursor-pointer" : ""}`}
+            onClick={() => onOpenModal?.(snippet.id)}
+            title={onOpenModal ? "클릭하면 전체 화면으로 크게 볼 수 있어요" : undefined}
+          >
+            <div className="bg-[#18181B] text-[#D4D7DD] rounded-[10px] overflow-hidden border border-[#2E2E36] hover:border-[#0F766E]/50 transition-colors shadow-inner">
               <div
                 className={`code-container text-xs sm:text-sm font-mono overflow-x-auto p-3.5 leading-6 ${
                   showLineNumbers ? "show-line-numbers" : "hide-line-numbers"
@@ -344,71 +342,72 @@ export default function CodeCard({
               >
                 {isLoadingBody ? (
                   <div className="py-6 text-center text-xs text-[#9CA3AF] animate-pulse">
-                    본문을 따로 가져오는 중입니다...
+                    코드 내용을 불러오는 중입니다...
                   </div>
                 ) : (
                   tokenizedLines.map((lineTokens, lineIdx) => {
-                  const rawLine = visibleLines[lineIdx];
-                  return (
-                    <div
-                      key={lineIdx}
-                      className="code-line group relative flex items-start justify-between hover:bg-[#26262E]/60 rounded-[4px] px-1"
-                    >
-                      {/* 줄머리 공백 보존 핵심: white-space: pre */}
+                    const rawLine = visibleLines[lineIdx];
+                    return (
                       <div
-                        className="code-line-text flex-1 min-w-0 overflow-x-visible"
-                        style={{ whiteSpace: "pre" }}
+                        key={lineIdx}
+                        className="code-line group relative flex items-start justify-between hover:bg-[#26262E]/60 rounded-[4px] px-1"
                       >
-                        {lineTokens.map((token, tokenIdx) => {
-                          const color = getTokenColor(token.type);
-                          return color ? (
-                            <span
-                              key={tokenIdx}
-                              style={{ color, whiteSpace: "pre" }}
-                            >
-                              {token.text}
-                            </span>
-                          ) : (
-                            <span key={tokenIdx} style={{ whiteSpace: "pre" }}>
-                              {token.text}
-                            </span>
-                          );
-                        })}
-                      </div>
-
-                      {/* 터미널 종류일 때 줄마다 복사 단추 */}
-                      {snippet.kind === "bash" && rawLine.trim().length > 0 && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleCopyLine(rawLine, lineIdx);
-                          }}
-                          title="이 줄 복사"
-                          className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 px-1.5 py-0.5 text-[10px] bg-[#26262E] hover:bg-[#3F3F46] text-[#A1A1AA] hover:text-white rounded border border-[#3F3F46]"
+                        {/* 줄머리 공백 보존 핵심: white-space: pre */}
+                        <div
+                          className="code-line-text flex-1 min-w-0 overflow-x-visible"
+                          style={{ whiteSpace: "pre" }}
                         >
-                          {copiedLineIdx === lineIdx ? "복사함" : "복사"}
-                        </button>
-                      )}
-                    </div>
-                  );
-                }))}
+                          {lineTokens.map((token, tokenIdx) => {
+                            const color = getTokenColor(token.type);
+                            return color ? (
+                              <span
+                                key={tokenIdx}
+                                style={{ color, whiteSpace: "pre" }}
+                              >
+                                {token.text}
+                              </span>
+                            ) : (
+                              <span key={tokenIdx} style={{ whiteSpace: "pre" }}>
+                                {token.text}
+                              </span>
+                            );
+                          })}
+                        </div>
+
+                        {/* 터미널 종류일 때 줄마다 복사 단추 */}
+                        {snippet.kind === "bash" && rawLine.trim().length > 0 && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyLine(rawLine, lineIdx);
+                            }}
+                            title="이 줄 복사"
+                            className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0 px-1.5 py-0.5 text-[10px] bg-[#26262E] hover:bg-[#3F3F46] text-[#A1A1AA] hover:text-white rounded border border-[#3F3F46]"
+                          >
+                            {copiedLineIdx === lineIdx ? "복사됨!" : "복사"}
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
               </div>
 
               {/* 20줄 넘칠 때 펼치기/접기 */}
               {isLong && (
-                <div className="border-t border-[#2E2E36] bg-[#26262E]/70 px-3 py-2 text-center">
+                <div className="border-t border-[#2E2E36] bg-[#222228] px-3 py-2 text-center">
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       setExpanded(!expanded);
                     }}
-                    className="text-xs font-medium text-[#CCFBF1] hover:text-white transition-colors"
+                    className="text-xs font-semibold text-[#14B8A6] hover:text-[#2DD4BF] transition-colors"
                   >
                     {expanded
-                      ? "위로 접기"
-                      : `아래로 ${hiddenCount}줄 더 — 펼치기`}
+                      ? "간략히 접기"
+                      : `전체 ${lines.length}줄 중 20줄 표시 중 · 더보기 (+${hiddenCount}줄)`}
                   </button>
                 </div>
               )}

@@ -111,8 +111,8 @@ export async function getTabs(): Promise<Tab[]> {
       .from("tabs")
       .select("*")
       .is("deleted_at", null)
-      .order("sort", { ascending: true })
-      .order("id", { ascending: true });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false });
     if (error) {
       console.error("Supabase getTabs error:", error);
       throw error;
@@ -123,7 +123,11 @@ export async function getTabs(): Promise<Tab[]> {
   const local = getLocalData();
   return local.tabs
     .filter((t) => !t.deleted_at)
-    .sort((a, b) => a.sort - b.sort || a.id - b.id);
+    .sort((a, b) => {
+      const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return timeB - timeA || b.id - a.id;
+    });
 }
 
 export async function createTab(name: string, sort?: number): Promise<Tab> {

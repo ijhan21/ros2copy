@@ -200,7 +200,7 @@ export default function TeacherPage() {
 
       if (res.ok) {
         const createdTab: Tab = await res.json();
-        setTabs((prev) => [...prev, createdTab]);
+        setTabs((prev) => [createdTab, ...prev]);
         handleSelectTab(createdTab.id);
         setNewTabName("");
         setIsCreatingTab(false);

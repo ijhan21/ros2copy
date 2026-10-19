@@ -1,5 +1,5 @@
 import { Tab, Snippet, Command } from "./types";
-import { getTabs, getSnippets, getCommands } from "./db";
+import { getTabs, getSnippets, getCommands, pingDatabase } from "./db";
 
 export interface StreamPayload {
   version: number;
@@ -48,18 +48,25 @@ function getHub(): SseHub {
   return globalThis.__ROS2_SSE_HUB__;
 }
 
-// 하루 1회 정지 방지 최소 조회 (구독자가 0명이어도 Supabase 7일 정지 방지)
+// 3시간 주기 Supabase 정지 방지 경량 핑 (구독자가 0명이어도 Supabase 7일 정지 완벽 방지)
 function initDailyTimer() {
   const hub = getHub();
   if (hub.dailyPingTimer) return;
-  hub.dailyPingTimer = setInterval(async () => {
+
+  const runPing = async () => {
     try {
-      console.log("[SSE Hub] 하루 1회 Supabase 정지 방지 조회 실행");
-      await syncFromDatabase();
+      await pingDatabase();
+      console.log("[SSE Hub] Supabase 정지 방지 핑 성공:", new Date().toISOString());
     } catch (err) {
-      console.error("[SSE Hub] 일일 핑 실패:", err);
+      console.error("[SSE Hub] Supabase 핑 실패:", err);
     }
-  }, 24 * 60 * 60 * 1000);
+  };
+
+  // 서버 시작 시 최초 1회 즉시 실행
+  runPing();
+
+  // 3시간마다 주기적 실행
+  hub.dailyPingTimer = setInterval(runPing, 3 * 60 * 60 * 1000);
 }
 
 // 탭별 본문 합이 256KB를 초과할 경우 본문 비우고 목록만 전송
@@ -160,16 +167,16 @@ export async function syncFromDatabase(): Promise<boolean> {
   }
 }
 
-// 5초 주기 DB 동기화 타이머 시작/정지
+// 주기적 DB 동기화 타이머 시작/정지 (강사 작성 시에는 notifyMutationImmediate로 0초 즉시 반영)
 function updateSyncTimer() {
   const hub = getHub();
   const hasSubscribers = hub.subscribers.size > 0;
 
   if (hasSubscribers && !hub.syncTimer) {
-    // 구독자가 있으면 5초 주기로 Supabase 동기화
+    // 구독자가 있으면 30초 주기로 보조 동기화 (대역폭 낭비 방지)
     hub.syncTimer = setInterval(async () => {
       await syncFromDatabase();
-    }, 5000);
+    }, 30000);
 
     // 15초 주기 keepalive 전송 (주석 한 줄)
     if (!hub.keepaliveTimer) {

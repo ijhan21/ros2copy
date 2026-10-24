@@ -1,5 +1,5 @@
-import { Tab, Snippet, Command } from "./types";
-import { getTabs, getSnippets, getCommands, pingDatabase } from "./db";
+import { Tab, Snippet, Command, SharedFile } from "./types";
+import { getTabs, getSnippets, getCommands, getSharedFiles, pingDatabase } from "./db";
 
 export interface StreamPayload {
   version: number;
@@ -7,6 +7,7 @@ export interface StreamPayload {
   tabs: Tab[];
   snippets: Snippet[];
   commands: Command[];
+  files: SharedFile[];
 }
 
 export type SseSender = (event: string, data: any) => void;
@@ -15,6 +16,7 @@ interface SseHub {
   tabs: Tab[];
   snippets: Snippet[];
   commands: Command[];
+  files: SharedFile[];
   version: number;
   lastFetchedAt: number;
   subscribers: Map<string, SseSender>;
@@ -35,6 +37,7 @@ function getHub(): SseHub {
       tabs: [],
       snippets: [],
       commands: [],
+      files: [],
       version: 1,
       lastFetchedAt: 0,
       subscribers: new Map(),
@@ -74,6 +77,7 @@ export function formatPayload(
   tabs: Tab[],
   snippets: Snippet[],
   commands: Command[],
+  files: SharedFile[],
   version: number
 ): StreamPayload {
   const tabBodyBytes = new Map<number | null, number>();
@@ -104,6 +108,7 @@ export function formatPayload(
     tabs,
     snippets: processedSnippets,
     commands,
+    files,
   };
 }
 
@@ -112,7 +117,7 @@ export function broadcastState() {
   const hub = getHub();
   if (hub.subscribers.size === 0) return;
 
-  const payload = formatPayload(hub.tabs, hub.snippets, hub.commands, hub.version);
+  const payload = formatPayload(hub.tabs, hub.snippets, hub.commands, hub.files, hub.version);
   for (const [id, send] of hub.subscribers.entries()) {
     try {
       send("update", payload);
@@ -129,10 +134,11 @@ export async function syncFromDatabase(): Promise<boolean> {
   hub.isSyncing = true;
 
   try {
-    const [tabs, snippets, commands] = await Promise.all([
+    const [tabs, snippets, commands, files] = await Promise.all([
       getTabs(),
       getSnippets(),
       getCommands(),
+      getSharedFiles(),
     ]);
 
     // 변경 여부 비교 (간단한 JSON 직렬화 비교)
@@ -140,12 +146,14 @@ export async function syncFromDatabase(): Promise<boolean> {
       t: hub.tabs.map((t) => [t.id, t.name, t.sort, t.deleted_at]),
       s: hub.snippets.map((s) => [s.id, s.title, s.pinned, s.deleted_at, s.body]),
       c: hub.commands.map((c) => [c.id, c.body, c.memo, c.pinned, c.deleted_at]),
+      f: hub.files.map((f) => [f.id, f.original_name, f.tab_id, f.deleted_at, f.download_count, f.memo]),
     });
 
     const newSig = JSON.stringify({
       t: tabs.map((t) => [t.id, t.name, t.sort, t.deleted_at]),
       s: snippets.map((s) => [s.id, s.title, s.pinned, s.deleted_at, s.body]),
       c: commands.map((c) => [c.id, c.body, c.memo, c.pinned, c.deleted_at]),
+      f: files.map((f) => [f.id, f.original_name, f.tab_id, f.deleted_at, f.download_count, f.memo]),
     });
 
     hub.lastFetchedAt = Date.now();
@@ -154,6 +162,7 @@ export async function syncFromDatabase(): Promise<boolean> {
       hub.tabs = tabs;
       hub.snippets = snippets;
       hub.commands = commands;
+      hub.files = files;
       hub.version++;
       broadcastState();
       return true;
@@ -211,12 +220,12 @@ export async function subscribeClient(
   hub.subscribers.set(clientId, sender);
 
   // 첫 구독자 진입 또는 최초 캐시 비어있으면 즉시 동기화
-  if (hub.tabs.length === 0 && hub.snippets.length === 0 && hub.commands.length === 0) {
+  if (hub.tabs.length === 0 && hub.snippets.length === 0 && hub.commands.length === 0 && hub.files.length === 0) {
     await syncFromDatabase();
   }
 
   // 연결 즉시 현재 최신 상태 전달
-  sender("init", formatPayload(hub.tabs, hub.snippets, hub.commands, hub.version));
+  sender("init", formatPayload(hub.tabs, hub.snippets, hub.commands, hub.files, hub.version));
 
   updateSyncTimer();
 
@@ -238,7 +247,7 @@ export function notifyMutationImmediate() {
 // 현재 메모리 상태 반환 (폴링 또는 단건 API용)
 export function getCachedState(): StreamPayload {
   const hub = getHub();
-  return formatPayload(hub.tabs, hub.snippets, hub.commands, hub.version);
+  return formatPayload(hub.tabs, hub.snippets, hub.commands, hub.files, hub.version);
 }
 
 // 단건 스니펫 원본 본문 반환 (256KB 초과 탭용)

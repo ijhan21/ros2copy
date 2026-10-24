@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Tab, Snippet, Command } from "./types";
+import { Tab, Snippet, Command, SharedFile } from "./types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -95,3 +95,28 @@ export async function fetchCommandsFromClient(): Promise<Command[] | null> {
   }
   return data || [];
 }
+
+export async function fetchFilesFromClient(tabId?: number | null): Promise<SharedFile[] | null> {
+  const supabase = getBrowserSupabase();
+  if (!supabase) return null;
+
+  try {
+    const { data, error } = await supabase
+      .from("shared_files")
+      .select("*")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      return null;
+    }
+    let items = (data || []) as SharedFile[];
+    if (tabId) {
+      items = items.filter((f) => f.tab_id === tabId);
+    }
+    return items;
+  } catch {
+    return null;
+  }
+}
+

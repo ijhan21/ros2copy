@@ -32,3 +32,20 @@ export interface Command {
   deleted_at: string | null;
   created_at: string;
 }
+
+export interface SharedFile {
+  id: number;
+  tab_id: number | null;
+  filename: string;
+  original_name: string;
+  size: number;
+  mime_type: string | null;
+  memo: string | null;
+  download_count: number;
+  deleted_at: string | null;
+  created_at: string;
+  tabs?: {
+    name: string;
+  } | null;
+}
+

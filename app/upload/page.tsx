@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import Header from "@/components/Header";
-import { Tab, Snippet, Command, SnippetKind } from "@/lib/types";
+import { Tab, Snippet, Command, SnippetKind, SharedFile } from "@/lib/types";
 import {
   detectSnippetKind,
   getNextSnippetKind,
@@ -12,6 +12,7 @@ import {
   fetchTabsFromClient,
   fetchSnippetsFromClient,
   fetchCommandsFromClient,
+  fetchFilesFromClient,
 } from "@/lib/supabaseClient";
 
 interface UndoItem {
@@ -53,6 +54,13 @@ export default function TeacherPage() {
   const [cmdMemo, setCmdMemo] = useState("");
   const [isSubmittingCommand, setIsSubmittingCommand] = useState(false);
 
+  // 실습 공유 파일 상태
+  const [files, setFiles] = useState<SharedFile[]>([]);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [uploadFileMemo, setUploadFileMemo] = useState("");
+  const [isUploadingFile, setIsUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // 8초 되돌리기 상태
   const [undoItem, setUndoItem] = useState<UndoItem | null>(null);
   const [undoSecondsLeft, setUndoSecondsLeft] = useState(8);
@@ -74,27 +82,31 @@ export default function TeacherPage() {
   // 2. 전체 데이터 실시간 가져오기 (클라이언트 직접 조회 1순위)
   const refreshAllData = useCallback(async () => {
     try {
-      const [clientTabs, clientSnippets, clientCommands] = await Promise.all([
+      const [clientTabs, clientSnippets, clientCommands, clientFiles] = await Promise.all([
         fetchTabsFromClient(),
         fetchSnippetsFromClient(),
         fetchCommandsFromClient(),
+        fetchFilesFromClient(),
       ]);
 
       let tabsData = clientTabs;
       let snips = clientSnippets;
       let cmds = clientCommands;
+      let filesData = clientFiles;
 
-      if (tabsData === null || snips === null || cmds === null) {
+      if (tabsData === null || snips === null || cmds === null || filesData === null) {
         const now = Date.now();
-        const [tabsRes, snippetsRes, commandsRes] = await Promise.all([
+        const [tabsRes, snippetsRes, commandsRes, filesRes] = await Promise.all([
           fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
           fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
           fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+          fetch(`/api/files?t=${now}`, { cache: "no-store" }),
         ]);
 
         if (tabsData === null && tabsRes.ok) tabsData = await tabsRes.json();
         if (snips === null && snippetsRes.ok) snips = await snippetsRes.json();
         if (cmds === null && commandsRes.ok) cmds = await commandsRes.json();
+        if (filesData === null && filesRes.ok) filesData = await filesRes.json();
       }
 
       if (tabsData) {
@@ -114,6 +126,7 @@ export default function TeacherPage() {
 
       if (snips) setAllSnippets(snips);
       if (cmds) setCommands(cmds);
+      if (filesData) setFiles(filesData);
     } catch (err) {
       console.error("데이터 로드 오류:", err);
     }
@@ -541,6 +554,78 @@ export default function TeacherPage() {
 
   const recentCommands = [...commands].slice(-5).reverse();
 
+  // 파일 올리기
+  const handleUploadFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!requirePassword()) return;
+    if (!uploadFile || isUploadingFile) return;
+
+    setIsUploadingFile(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", uploadFile);
+      if (selectedTabId !== null) {
+        formData.append("tab_id", selectedTabId.toString());
+      }
+      if (uploadFileMemo.trim()) {
+        formData.append("memo", uploadFileMemo.trim());
+      }
+
+      const res = await fetch("/api/files", {
+        method: "POST",
+        headers: {
+          "x-board-password": password,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        setUploadFile(null);
+        setUploadFileMemo("");
+        if (fileInputRef.current) fileInputRef.current.value = "";
+        showNotice("파일을 올렸습니다.");
+        refreshAllData();
+      } else {
+        const err = await res.json();
+        if (res.status === 401) setIsAuthModalOpen(true);
+        showError(err.error || "파일 올리기 실패");
+      }
+    } catch (err) {
+      console.error("파일 업로드 에러:", err);
+      showError("파일 업로드 중 오류가 발생했습니다.");
+    } finally {
+      setIsUploadingFile(false);
+    }
+  };
+
+  // 파일 삭제
+  const handleDeleteFile = async (file: SharedFile) => {
+    if (!requirePassword()) return;
+    const confirmed = window.confirm(`'${file.original_name}' 파일을 삭제할까요?`);
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/files/${file.id}?permanent=true`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": password,
+        },
+      });
+
+      if (res.ok) {
+        showNotice(`'${file.original_name}' 파일을 삭제했습니다.`);
+        refreshAllData();
+      } else {
+        const err = await res.json();
+        if (res.status === 401) setIsAuthModalOpen(true);
+        showError(err.error || "파일 삭제 실패");
+      }
+    } catch (err) {
+      console.error(err);
+      showError("파일 삭제 중 오류");
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5] pb-48">
       <Header isTeacher />
@@ -662,6 +747,104 @@ export default function TeacherPage() {
               </button>
             )}
           </div>
+        </section>
+
+        {/* 1.5. 실습 파일 공유하기 */}
+        <section className="bg-[#FFFFFF] dark:bg-[#1A1A1E] p-5 rounded-[13px] border border-[#E4E4E7] dark:border-[#2E2E36] flex flex-col gap-4">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold text-[#18181B] dark:text-[#F4F4F5] flex items-center gap-1.5">
+              <span>📁</span>
+              <span>실습 파일 공유하기</span>
+              {selectedTabId && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-semibold bg-[#0F766E]/10 text-[#0F766E] dark:bg-[#14B8A6]/10 dark:text-[#14B8A6]">
+                  {tabs.find((t) => t.id === selectedTabId)?.name || "선택된 탭"}
+                </span>
+              )}
+            </h2>
+            <span className="text-xs text-[#71717A] dark:text-[#9CA3AF]">
+              패키지 압축파일, launch, yaml, bag 파일 등을 학생에게 공유합니다
+            </span>
+          </div>
+
+          <form onSubmit={handleUploadFile} className="flex flex-col sm:flex-row gap-3 items-end sm:items-center">
+            <div className="flex-1 w-full">
+              <label className="block text-xs text-[#52525B] dark:text-[#9CA3AF] mb-1">
+                파일 선택 (우분투 실습 패키지, 소스코드, 문서 등)
+              </label>
+              <input
+                ref={fileInputRef}
+                type="file"
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                className="w-full text-xs text-[#52525B] dark:text-[#D1D5DB] file:mr-3 file:py-1.5 file:px-3 file:rounded-[6px] file:border-0 file:text-xs file:font-semibold file:bg-[#0F766E] file:text-white hover:file:bg-[#115E59] file:cursor-pointer cursor-pointer border border-[#E4E4E7] dark:border-[#2E2E36] rounded-[8px] p-1.5 bg-[#F7F7F8] dark:bg-[#121214]"
+              />
+            </div>
+
+            <div className="w-full sm:w-64">
+              <label className="block text-xs text-[#52525B] dark:text-[#9CA3AF] mb-1">
+                한 줄 설명 (선택)
+              </label>
+              <input
+                type="text"
+                placeholder="예: 3차시 실습 패키지 압축본"
+                value={uploadFileMemo}
+                onChange={(e) => setUploadFileMemo(e.target.value)}
+                className="w-full min-h-[36px] px-3 text-xs rounded-[8px] border border-[#E4E4E7] dark:border-[#2E2E36] bg-[#F7F7F8] dark:bg-[#121214] text-[#18181B] dark:text-[#F4F4F5] outline-none focus:border-[#0F766E]"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={isUploadingFile || !uploadFile}
+              className="min-h-[36px] px-5 text-xs font-bold rounded-[8px] bg-[#0F766E] hover:bg-[#115E59] text-white disabled:opacity-40 disabled:hover:bg-[#0F766E] transition-colors whitespace-nowrap shrink-0 shadow-xs"
+            >
+              {isUploadingFile ? "올리는 중..." : "파일 올리기"}
+            </button>
+          </form>
+
+          {/* 현재 탭에 등록된 파일 목록 */}
+          {files.filter((f) => !selectedTabId || f.tab_id === selectedTabId).length > 0 && (
+            <div className="pt-3 border-t border-[#E4E4E7] dark:border-[#2E2E36] space-y-2">
+              <div className="text-xs font-semibold text-[#52525B] dark:text-[#D1D5DB]">
+                공유 중인 파일 ({files.filter((f) => !selectedTabId || f.tab_id === selectedTabId).length}개)
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {files
+                  .filter((f) => !selectedTabId || f.tab_id === selectedTabId)
+                  .map((file) => (
+                    <div
+                      key={file.id}
+                      className="flex items-center justify-between p-2.5 rounded-[8px] bg-[#F7F7F8] dark:bg-[#26262E] border border-[#E4E4E7] dark:border-[#3F3F46] text-xs"
+                    >
+                      <div className="overflow-hidden flex-1 mr-2">
+                        <div className="font-medium text-[#18181B] dark:text-[#F4F4F5] truncate">
+                          {file.original_name}
+                        </div>
+                        <div className="text-[10px] text-[#71717A] dark:text-[#9CA3AF] flex items-center gap-2">
+                          <span>{(file.size / 1024).toFixed(1)} KB</span>
+                          {file.memo && <span>· {file.memo}</span>}
+                          {file.download_count > 0 && <span>· 다운로드 {file.download_count}회</span>}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <a
+                          href={`/api/files/${file.id}/download`}
+                          download={file.original_name}
+                          className="px-2 py-1 text-[11px] font-semibold rounded-[4px] bg-[#0F766E] text-white hover:bg-[#115E59]"
+                        >
+                          다운로드
+                        </a>
+                        <button
+                          onClick={() => handleDeleteFile(file)}
+                          className="px-2 py-1 text-[11px] font-semibold rounded-[4px] bg-[#FEE2E2] dark:bg-[#7F1D1D]/40 text-red-600 dark:text-red-400 hover:bg-[#FECACA]"
+                        >
+                          삭제
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {/* 2. 코드 올리기 */}

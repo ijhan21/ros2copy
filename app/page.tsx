@@ -5,6 +5,7 @@ import Header from "@/components/Header";
 import CodeCard from "@/components/CodeCard";
 import CommandStream from "@/components/CommandStream";
 import CodeModal from "@/components/CodeModal";
+import SharedFilesSection from "@/components/SharedFilesSection";
 import { Snippet } from "@/lib/types";
 import { useSseStream } from "@/hooks/useSseStream";
 
@@ -20,8 +21,10 @@ export default function StudentPage() {
     tabs,
     snippets,
     commands,
+    files,
     setSnippets,
     setCommands,
+    setFiles,
     connectionMode,
     isRefreshing,
     refreshManually,
@@ -31,7 +34,7 @@ export default function StudentPage() {
   const [selectedTabId, setSelectedTabId] = useState<number | null>(null); // null = 전체
   const [tabCopied, setTabCopied] = useState(false);
   const [mobileView, setMobileView] = useState<"code" | "commands">("code");
-  const loading = tabs.length === 0 && snippets.length === 0 && commands.length === 0;
+  const loading = tabs.length === 0 && snippets.length === 0 && commands.length === 0 && files.length === 0;
 
   // 강사 권한 상태
   const [hasTeacherPassword, setHasTeacherPassword] = useState(false);
@@ -193,6 +196,31 @@ export default function StudentPage() {
     } catch (err) {
       console.error(err);
       alert("명령 삭제 중 오류");
+      return false;
+    }
+  };
+
+  // 파일 지우기
+  const handleDeleteFile = async (id: number): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/files/${id}?permanent=true`, {
+        method: "DELETE",
+        headers: {
+          "x-board-password": teacherPassword,
+        },
+      });
+
+      if (res.ok) {
+        setFiles((prev) => prev.filter((f) => f.id !== id));
+        return true;
+      } else {
+        const err = await res.json();
+        alert(err.error || "파일 삭제 실패");
+        return false;
+      }
+    } catch (err) {
+      console.error(err);
+      alert("파일 삭제 중 오류가 발생했습니다.");
       return false;
     }
   };
@@ -430,6 +458,17 @@ export default function StudentPage() {
                 )}
               </div>
             </div>
+
+            {/* 실습 공유 파일 목록 */}
+            <SharedFilesSection
+              files={files}
+              tabs={tabs}
+              selectedTabId={selectedTabId}
+              isTeacher={hasTeacherPassword}
+              teacherPassword={teacherPassword}
+              onDeleteFile={handleDeleteFile}
+              onFileUploaded={refreshManually}
+            />
 
             {/* 코드 카드 2열 격자 (items-start로 개별 높이 유지, 공백 문제 원천 차단) */}
             {loading ? (

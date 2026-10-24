@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Tab, Snippet, Command } from "@/lib/types";
+import { Tab, Snippet, Command, SharedFile } from "@/lib/types";
 
 export type ConnectionMode = "connected" | "connecting" | "polling";
 
@@ -13,6 +13,7 @@ export function useSseStream(options?: UseSseStreamOptions) {
   const [tabs, setTabs] = useState<Tab[]>([]);
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [commands, setCommands] = useState<Command[]>([]);
+  const [files, setFiles] = useState<SharedFile[]>([]);
   const [connectionMode, setConnectionMode] = useState<ConnectionMode>("connecting");
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -26,10 +27,11 @@ export function useSseStream(options?: UseSseStreamOptions) {
   const pollFallback = useCallback(async () => {
     try {
       const now = Date.now();
-      const [tabsRes, snipsRes, cmdsRes] = await Promise.all([
+      const [tabsRes, snipsRes, cmdsRes, filesRes] = await Promise.all([
         fetch(`/api/tabs?t=${now}`, { cache: "no-store" }),
         fetch(`/api/snippets?t=${now}`, { cache: "no-store" }),
         fetch(`/api/commands?t=${now}`, { cache: "no-store" }),
+        fetch(`/api/files?t=${now}`, { cache: "no-store" }),
       ]);
 
       if (tabsRes.ok) {
@@ -43,6 +45,10 @@ export function useSseStream(options?: UseSseStreamOptions) {
       if (cmdsRes.ok) {
         const cData = await cmdsRes.json();
         setCommands(cData);
+      }
+      if (filesRes.ok) {
+        const fData = await filesRes.json();
+        setFiles(fData);
       }
     } catch (err) {
       console.warn("[Poll Fallback] 데이터 가져오기 실패:", err);
@@ -101,6 +107,7 @@ export function useSseStream(options?: UseSseStreamOptions) {
           });
         }
         if (payload.commands) setCommands(payload.commands);
+        if (payload.files) setFiles(payload.files);
 
         failureCountRef.current = 0;
         setConnectionMode("connected");
@@ -194,9 +201,11 @@ export function useSseStream(options?: UseSseStreamOptions) {
     tabs,
     snippets,
     commands,
+    files,
     setTabs,
     setSnippets,
     setCommands,
+    setFiles,
     connectionMode,
     isRefreshing,
     refreshManually,

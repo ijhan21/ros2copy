@@ -1,5 +1,5 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
-import { Tab, Snippet, Command, SnippetKind } from "./types";
+import { Tab, Snippet, Command, SnippetKind, SharedFile } from "./types";
 import fs from "fs";
 import path from "path";
 
@@ -44,9 +44,11 @@ interface LocalData {
   tabs: Tab[];
   snippets: Snippet[];
   commands: Command[];
+  sharedFiles?: SharedFile[];
   nextTabId: number;
   nextSnippetId: number;
   nextCommandId: number;
+  nextSharedFileId?: number;
 }
 
 const LOCAL_DB_PATH = path.join("/tmp", ".ros2copy_local_db.json");
@@ -58,6 +60,12 @@ declare global {
 
 function getLocalData(): LocalData {
   if (globalThis.__ROS2_MEMORY_DB__) {
+    if (!globalThis.__ROS2_MEMORY_DB__.sharedFiles) {
+      globalThis.__ROS2_MEMORY_DB__.sharedFiles = [];
+    }
+    if (!globalThis.__ROS2_MEMORY_DB__.nextSharedFileId) {
+      globalThis.__ROS2_MEMORY_DB__.nextSharedFileId = 1;
+    }
     return globalThis.__ROS2_MEMORY_DB__;
   }
 
@@ -65,6 +73,8 @@ function getLocalData(): LocalData {
     try {
       const content = fs.readFileSync(LOCAL_DB_PATH, "utf-8");
       const parsed = JSON.parse(content);
+      if (!parsed.sharedFiles) parsed.sharedFiles = [];
+      if (!parsed.nextSharedFileId) parsed.nextSharedFileId = 1;
       globalThis.__ROS2_MEMORY_DB__ = parsed;
       return parsed;
     } catch {
@@ -79,9 +89,11 @@ function getLocalData(): LocalData {
     ],
     snippets: [],
     commands: [],
+    sharedFiles: [],
     nextTabId: 3,
     nextSnippetId: 1,
     nextCommandId: 1,
+    nextSharedFileId: 1,
   };
 
   try {
@@ -606,6 +618,215 @@ export async function deleteCommand(id: number, permanent = false): Promise<void
   }
   saveLocalData(local);
   notifyChange();
+}
+
+// ---------------- Shared Files ----------------
+export async function getSharedFiles(tabId?: number): Promise<SharedFile[]> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const [filesRes, tabsRes] = await Promise.all([
+        supabase
+          .from("shared_files")
+          .select("*")
+          .is("deleted_at", null)
+          .order("created_at", { ascending: false }),
+        supabase.from("tabs").select("id, name"),
+      ]);
+
+      if (filesRes.error) {
+        console.warn("Supabase shared_files query error (로컬 저장소로 자동 전환):", filesRes.error.message);
+      } else {
+        const tabMap = new Map((tabsRes.data || []).map((t: any) => [t.id, t.name]));
+        let files: SharedFile[] = (filesRes.data || []).map((f: any) => ({
+          ...f,
+          tabs: f.tab_id && tabMap.has(f.tab_id) ? { name: tabMap.get(f.tab_id)! } : null,
+        }));
+        if (tabId !== undefined) {
+          files = files.filter((f) => f.tab_id === tabId);
+        }
+        return files;
+      }
+    } catch (err: any) {
+      console.warn("Supabase shared_files 조회 실패 (로컬 저장소로 자동 전환):", err.message);
+    }
+  }
+
+  const local = getLocalData();
+  const tabMap = new Map(local.tabs.map((t) => [t.id, t.name]));
+  let result = (local.sharedFiles || [])
+    .filter((f) => !f.deleted_at)
+    .map((f) => ({
+      ...f,
+      tabs: f.tab_id && tabMap.has(f.tab_id) ? { name: tabMap.get(f.tab_id)! } : null,
+    }));
+
+  if (tabId !== undefined) {
+    result = result.filter((f) => f.tab_id === tabId);
+  }
+
+  return result.sort((a, b) => {
+    const timeA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const timeB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return timeB - timeA || b.id - a.id;
+  });
+}
+
+export async function getSharedFileById(id: number): Promise<SharedFile | null> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("shared_files")
+        .select("*, tabs(name)")
+        .eq("id", id)
+        .is("deleted_at", null)
+        .single();
+      if (!error && data) {
+        return data as SharedFile;
+      }
+    } catch {
+      // 로컬 조회로 진행
+    }
+  }
+
+  const local = getLocalData();
+  const file = (local.sharedFiles || []).find((f) => f.id === id && !f.deleted_at);
+  if (!file) return null;
+  const tab = local.tabs.find((t) => t.id === file.tab_id);
+  return {
+    ...file,
+    tabs: tab ? { name: tab.name } : null,
+  };
+}
+
+export async function createSharedFile(input: {
+  tab_id: number | null;
+  filename: string;
+  original_name: string;
+  size: number;
+  mime_type?: string | null;
+  memo?: string | null;
+}): Promise<SharedFile> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data, error } = await supabase
+        .from("shared_files")
+        .insert({
+          tab_id: input.tab_id,
+          filename: input.filename,
+          original_name: input.original_name,
+          size: input.size,
+          mime_type: input.mime_type || null,
+          memo: input.memo?.trim() || null,
+          download_count: 0,
+        })
+        .select("*, tabs(name)")
+        .single();
+
+      if (!error && data) {
+        notifyChange();
+        return data as SharedFile;
+      }
+      console.warn("Supabase createSharedFile error (로컬 저장소로 자동 전환):", error?.message);
+    } catch (err: any) {
+      console.warn("Supabase createSharedFile exception (로컬 저장소로 자동 전환):", err.message);
+    }
+  }
+
+  const local = getLocalData();
+  if (!local.sharedFiles) local.sharedFiles = [];
+  if (!local.nextSharedFileId) local.nextSharedFileId = 1;
+
+  const newFile: SharedFile = {
+    id: local.nextSharedFileId++,
+    tab_id: input.tab_id,
+    filename: input.filename,
+    original_name: input.original_name,
+    size: input.size,
+    mime_type: input.mime_type || null,
+    memo: input.memo?.trim() || null,
+    download_count: 0,
+    deleted_at: null,
+    created_at: new Date().toISOString(),
+  };
+
+  const tab = local.tabs.find((t) => t.id === newFile.tab_id);
+  if (tab) {
+    newFile.tabs = { name: tab.name };
+  }
+
+  local.sharedFiles.push(newFile);
+  saveLocalData(local);
+  notifyChange();
+  return newFile;
+}
+
+export async function deleteSharedFile(
+  id: number,
+  permanent = false
+): Promise<SharedFile | null> {
+  let targetFile: SharedFile | null = await getSharedFileById(id);
+
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { error } = permanent
+        ? await supabase.from("shared_files").delete().eq("id", id)
+        : await supabase
+            .from("shared_files")
+            .update({ deleted_at: new Date().toISOString() })
+            .eq("id", id);
+
+      if (!error) {
+        notifyChange();
+        return targetFile;
+      }
+      console.warn("Supabase deleteSharedFile error (로컬 저장소로 자동 전환):", error.message);
+    } catch (err: any) {
+      console.warn("Supabase deleteSharedFile exception (로컬 저장소로 자동 전환):", err.message);
+    }
+  }
+
+  const local = getLocalData();
+  if (permanent) {
+    local.sharedFiles = (local.sharedFiles || []).filter((f) => f.id !== id);
+  } else {
+    const target = (local.sharedFiles || []).find((f) => f.id === id);
+    if (target) {
+      target.deleted_at = new Date().toISOString();
+      targetFile = target;
+    }
+  }
+  saveLocalData(local);
+  notifyChange();
+  return targetFile;
+}
+
+export async function incrementSharedFileDownloadCount(id: number): Promise<void> {
+  const supabase = getSupabase();
+  if (supabase) {
+    try {
+      const { data } = await supabase.from("shared_files").select("download_count").eq("id", id).single();
+      if (data) {
+        await supabase
+          .from("shared_files")
+          .update({ download_count: (data.download_count || 0) + 1 })
+          .eq("id", id);
+        return;
+      }
+    } catch {
+      // 로컬 카운트 증가로 전환
+    }
+  }
+
+  const local = getLocalData();
+  const target = (local.sharedFiles || []).find((f) => f.id === id);
+  if (target) {
+    target.download_count = (target.download_count || 0) + 1;
+    saveLocalData(local);
+  }
 }
 
 // ---------------- Health / Ping ----------------

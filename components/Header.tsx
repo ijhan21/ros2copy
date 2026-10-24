@@ -20,7 +20,7 @@ export default function Header({ isTeacher = false, connectionMode = "connected"
             ROS2 코드 보드
           </Link>
           <span className="text-xs text-[#52525B] dark:text-[#9CA3AF]">
-            수업 실습 코드와 터미널 명령어를 모아두는 곳입니다. 클릭해서 편하게 복사해 가세요.
+            수업 실습 코드, 터미널 명령어, 실습 파일을 모아두는 곳입니다. 클릭해서 편하게 복사해 가세요.
           </span>
         </div>
 

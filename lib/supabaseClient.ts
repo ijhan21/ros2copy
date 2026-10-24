@@ -96,27 +96,9 @@ export async function fetchCommandsFromClient(): Promise<Command[] | null> {
   return data || [];
 }
 
-export async function fetchFilesFromClient(tabId?: number | null): Promise<SharedFile[] | null> {
-  const supabase = getBrowserSupabase();
-  if (!supabase) return null;
-
-  try {
-    const { data, error } = await supabase
-      .from("shared_files")
-      .select("*")
-      .is("deleted_at", null)
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      return null;
-    }
-    let items = (data || []) as SharedFile[];
-    if (tabId) {
-      items = items.filter((f) => f.tab_id === tabId);
-    }
-    return items;
-  } catch {
-    return null;
-  }
+export async function fetchFilesFromClient(_tabId?: number | null): Promise<SharedFile[] | null> {
+  // 클라이언트 브라우저에서 Supabase로 직접 미존재 테이블 쿼리(400/404 에러)를 날리지 않고,
+  // 서버 API(/api/files)를 통해 안전하게 로컬/메모리 캐시 데이터를 가져옵니다.
+  return null;
 }
 

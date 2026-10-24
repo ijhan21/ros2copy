@@ -621,9 +621,12 @@ export async function deleteCommand(id: number, permanent = false): Promise<void
 }
 
 // ---------------- Shared Files ----------------
+// Supabase에 shared_files 테이블이 생성되어 있는지 확인 (미존재 시 400/404 반복 쿼리 에러 방지를 위해 로컬 모드로 고정)
+let isSharedFilesTableAvailable: boolean | null = null;
+
 export async function getSharedFiles(tabId?: number): Promise<SharedFile[]> {
   const supabase = getSupabase();
-  if (supabase) {
+  if (supabase && isSharedFilesTableAvailable !== false) {
     try {
       const [filesRes, tabsRes] = await Promise.all([
         supabase
@@ -635,8 +638,10 @@ export async function getSharedFiles(tabId?: number): Promise<SharedFile[]> {
       ]);
 
       if (filesRes.error) {
-        console.warn("Supabase shared_files query error (로컬 저장소로 자동 전환):", filesRes.error.message);
+        isSharedFilesTableAvailable = false;
+        console.log("[DB] Supabase shared_files 테이블이 아직 생성되지 않아 로컬 저장소 모드로 작동합니다 (Supabase 반복 호출 차단).");
       } else {
+        isSharedFilesTableAvailable = true;
         const tabMap = new Map((tabsRes.data || []).map((t: any) => [t.id, t.name]));
         let files: SharedFile[] = (filesRes.data || []).map((f: any) => ({
           ...f,
@@ -647,8 +652,9 @@ export async function getSharedFiles(tabId?: number): Promise<SharedFile[]> {
         }
         return files;
       }
-    } catch (err: any) {
-      console.warn("Supabase shared_files 조회 실패 (로컬 저장소로 자동 전환):", err.message);
+    } catch {
+      isSharedFilesTableAvailable = false;
+      console.log("[DB] Supabase shared_files 조회 실패로 로컬 저장소 모드로 전환합니다.");
     }
   }
 
@@ -674,7 +680,7 @@ export async function getSharedFiles(tabId?: number): Promise<SharedFile[]> {
 
 export async function getSharedFileById(id: number): Promise<SharedFile | null> {
   const supabase = getSupabase();
-  if (supabase) {
+  if (supabase && isSharedFilesTableAvailable === true) {
     try {
       const { data, error } = await supabase
         .from("shared_files")
@@ -709,7 +715,7 @@ export async function createSharedFile(input: {
   memo?: string | null;
 }): Promise<SharedFile> {
   const supabase = getSupabase();
-  if (supabase) {
+  if (supabase && isSharedFilesTableAvailable === true) {
     try {
       const { data, error } = await supabase
         .from("shared_files")
@@ -729,9 +735,8 @@ export async function createSharedFile(input: {
         notifyChange();
         return data as SharedFile;
       }
-      console.warn("Supabase createSharedFile error (로컬 저장소로 자동 전환):", error?.message);
-    } catch (err: any) {
-      console.warn("Supabase createSharedFile exception (로컬 저장소로 자동 전환):", err.message);
+    } catch {
+      // 로컬 생성으로 전환
     }
   }
 
@@ -770,7 +775,7 @@ export async function deleteSharedFile(
   let targetFile: SharedFile | null = await getSharedFileById(id);
 
   const supabase = getSupabase();
-  if (supabase) {
+  if (supabase && isSharedFilesTableAvailable === true) {
     try {
       const { error } = permanent
         ? await supabase.from("shared_files").delete().eq("id", id)
@@ -783,9 +788,8 @@ export async function deleteSharedFile(
         notifyChange();
         return targetFile;
       }
-      console.warn("Supabase deleteSharedFile error (로컬 저장소로 자동 전환):", error.message);
-    } catch (err: any) {
-      console.warn("Supabase deleteSharedFile exception (로컬 저장소로 자동 전환):", err.message);
+    } catch {
+      // 로컬 삭제로 전환
     }
   }
 
@@ -806,7 +810,7 @@ export async function deleteSharedFile(
 
 export async function incrementSharedFileDownloadCount(id: number): Promise<void> {
   const supabase = getSupabase();
-  if (supabase) {
+  if (supabase && isSharedFilesTableAvailable === true) {
     try {
       const { data } = await supabase.from("shared_files").select("download_count").eq("id", id).single();
       if (data) {
